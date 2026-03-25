@@ -1,0 +1,3 @@
+rootProject.name = 'distrib-txn-db'
+include('01-hybrid-clock')
+include('02-versioned-kv')

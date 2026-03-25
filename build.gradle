@@ -1,0 +1,25 @@
+subprojects {
+    apply plugin: 'java'
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
+    }
+
+    repositories {
+        mavenLocal()
+        mavenCentral()
+        maven { url 'https://repo.clojars.org/' }
+    }
+
+    dependencies {
+        testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+        implementation 'io.github.unmeshjoshi:tickloom:0.1.0-alpha.17'
+        testImplementation 'io.github.unmeshjoshi:tickloom-testkit:0.1.0-alpha.17'
+    }
+
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+    }
+}
