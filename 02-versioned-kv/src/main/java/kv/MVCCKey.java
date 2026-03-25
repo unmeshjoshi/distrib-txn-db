@@ -24,6 +24,15 @@ public class MVCCKey implements Comparable<MVCCKey> {
         return timestamp;
     }
 
+    public boolean startsWith(byte[] prefix) {
+        return key.length >= prefix.length
+                && Arrays.compareUnsigned(key, 0, prefix.length, prefix, 0, prefix.length) == 0;
+    }
+
+    public boolean isVisibleAt(HybridTimestamp asOfTime) {
+        return timestamp.compareTo(asOfTime) <= 0;
+    }
+
     @Override
     public int compareTo(MVCCKey other) {
         int keyCompare = Arrays.compareUnsigned(this.key, other.key);

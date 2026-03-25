@@ -98,8 +98,8 @@ public final class RocksDbMvccStore implements MVCCStore, AutoCloseable {
         try (RocksIterator iterator = db.newIterator()) {
             iterator.seek(encodedSearchKey);
             while (iterator.isValid() && belongsToLogicalKey(key, iterator.key())) {
-                byte[] encodedKey = iterator.key();
-                result.put(decodeMVCCTimestamp(encodedKey), iterator.value());
+                MVCCKey mvccKey = decodeMVCCKey(iterator.key());
+                result.put(mvccKey.getTimestamp(), iterator.value());
                 iterator.next();
             }
         }
@@ -108,35 +108,31 @@ public final class RocksDbMvccStore implements MVCCStore, AutoCloseable {
 
     @Override
     public Map<byte[], byte[]> scanPrefixAsOf(byte[] prefix, HybridTimestamp asOfTime) {
-        Map<byte[], byte[]> result = new TreeMap<>(Arrays::compareUnsigned);
+        var result = new TreeMap<byte[], byte[]>(Arrays::compareUnsigned);
         try (RocksIterator iterator = db.newIterator()) {
             iterator.seek(prefix); //This seeks to the first version which is the latest.
-            while (iterator.isValid()) {
-                byte[] encodedKey = iterator.key();
-                if (!isEncodedMvccKey(encodedKey)) {
-                    if (!startsWith(encodedKey, prefix)) {
-                        break;
-                    }
-                    iterator.next();
-                    continue;
-                }
-
-                byte[] logicalKey = decodeMVCCLogicalKey(encodedKey);
-                if (!startsWith(logicalKey, prefix)) {
-                    break;
-                }
-
-                if (!result.containsKey(logicalKey)) {
-                    HybridTimestamp versionTimestamp = decodeMVCCTimestamp(encodedKey);
-                    if (versionTimestamp.compareTo(asOfTime) <= 0) {
-                        result.put(logicalKey, iterator.value());
-                    }
-                }
-
-                iterator.next();
-            }
+            collectVisiblePrefixRecordsAsOf(prefix, asOfTime, iterator, result);
         }
         return result;
+    }
+
+    private void collectVisiblePrefixRecordsAsOf(
+            byte[] prefix, HybridTimestamp asOfTime, RocksIterator iterator, Map<byte[], byte[]> result) {
+
+        while (iterator.isValid()) {
+            MVCCKey mvccKey = decodeMVCCKey(iterator.key());
+
+            if (!mvccKey.startsWith(prefix)) {
+                break;
+            }
+
+            byte[] logicalKey = mvccKey.getKey();
+            if (!result.containsKey(logicalKey) && mvccKey.isVisibleAt(asOfTime)) {
+                result.put(logicalKey, iterator.value());
+            }
+
+            iterator.next();
+        }
     }
 
     @Override
@@ -158,11 +154,6 @@ public final class RocksDbMvccStore implements MVCCStore, AutoCloseable {
     private boolean isEncodedMvccKey(byte[] encodedKey) {
         return encodedKey.length >= Long.BYTES + Integer.BYTES + 1
                 && encodedKey[encodedKey.length - (Long.BYTES + Integer.BYTES + 1)] == 0x00;
-    }
-
-    boolean startsWith(byte[] value, byte[] prefix) {
-        return value.length >= prefix.length
-                && Arrays.compareUnsigned(value, 0, prefix.length, prefix, 0, prefix.length) == 0;
     }
 
     @Override

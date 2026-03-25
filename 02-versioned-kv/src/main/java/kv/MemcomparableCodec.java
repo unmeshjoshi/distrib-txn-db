@@ -89,13 +89,18 @@ public class MemcomparableCodec {
      * evaluating natively away from the MVCC formatting byte blobs.
      */
     public static byte[] decodeMVCCLogicalKey(byte[] dbPhysicalKey) {
+        return decodeMVCCKey(dbPhysicalKey).getKey();
+    }
+
+    public static MVCCKey decodeMVCCKey(byte[] dbPhysicalKey) {
         // Because timestamps are strictly 12 bytes (8 Long + 4 Int), the null separator
         // is guaranteed structurally to be positioned at exactly length - 13!
-        int nullPos = dbPhysicalKey.length - 13;
-        if (nullPos < 0 || dbPhysicalKey[nullPos] != 0x00) {
-            throw new IllegalArgumentException("Corrupted DB MVCC Physical Key Structure");
-        }
-        return java.util.Arrays.copyOf(dbPhysicalKey, nullPos);
+        int nullPos = getTimestampSeparatorPosition(dbPhysicalKey);
+        byte[] logicalKey = java.util.Arrays.copyOf(dbPhysicalKey, nullPos);
+        ByteBuffer buf = ByteBuffer.wrap(dbPhysicalKey, nullPos + 1, Long.BYTES + Integer.BYTES);
+        long invertedTime = buf.getLong();
+        int invertedTicks = buf.getInt();
+        return new MVCCKey(logicalKey, new HybridTimestamp(~invertedTime, ~invertedTicks));
     }
 
     /**
@@ -103,12 +108,7 @@ public class MemcomparableCodec {
      * stripping away logical string overlays from the parsed map scan index structures.
      */
     public static HybridTimestamp decodeMVCCTimestamp(byte[] dbPhysicalKey) {
-        int nullPos = dbPhysicalKey.length - 13;
-        ByteBuffer buf = ByteBuffer.wrap(dbPhysicalKey, nullPos + 1, Long.BYTES + Integer.BYTES);
-        long invertedTime = buf.getLong();
-        int invertedTicks = buf.getInt();
-
-        return new HybridTimestamp(~invertedTime, ~invertedTicks);
+        return decodeMVCCKey(dbPhysicalKey).getTimestamp();
     }
 
     public static byte[] encode(HybridTimestamp t) {
@@ -120,5 +120,13 @@ public class MemcomparableCodec {
     private static void putHybridTimestamp(ByteBuffer buffer, HybridTimestamp timestamp) {
         buffer.putLong(~timestamp.getWallClockTime());
         buffer.putInt(~timestamp.getTicks());
+    }
+
+    private static int getTimestampSeparatorPosition(byte[] dbPhysicalKey) {
+        int nullPos = dbPhysicalKey.length - 13;
+        if (nullPos < 0 || dbPhysicalKey[nullPos] != 0x00) {
+            throw new IllegalArgumentException("Corrupted DB MVCC Physical Key Structure");
+        }
+        return nullPos;
     }
 }
