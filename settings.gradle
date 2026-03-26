@@ -1,3 +1,5 @@
 rootProject.name = 'distrib-txn-db'
+include('tickloom-hello-world')
 include('01-hybrid-clock')
 include('02-versioned-kv')
+include('03-distrib-versioned-kv')

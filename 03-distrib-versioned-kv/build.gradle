@@ -1,0 +1,8 @@
+plugins {
+    id 'java'
+}
+
+dependencies {
+    implementation project(':01-hybrid-clock')
+    implementation project(':02-versioned-kv')
+}
