@@ -59,7 +59,7 @@ public class MVCCKey implements Comparable<MVCCKey> {
 
     @Override
     public String toString() {
-        return "MVCCKey{key=" + MemcomparableCodec.decodeString(key) +
+        return "MVCCKey{key=" + OrderPreservingCodec.decodeString(key) +
                 ", timestamp=" + timestamp + '}';
     }
 }

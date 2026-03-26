@@ -21,7 +21,7 @@ import java.nio.charset.StandardCharsets;
  * - YugabyteDB DocDB Key Formatting: https://github.com/yugabyte/yugabyte-db/blob/master/src/yb/dockv/doc_key.cc#L251
  * - MongoDB (WiredTiger) Memcomparable KeyString Format: https://github.com/mongodb/mongo/blob/master/src/mongo/db/storage/key_string/key_string.cpp
  */
-public class MemcomparableCodec {
+public class OrderPreservingCodec {
 
     // --- Basic Order-Preserving Encoders ---
 

@@ -5,7 +5,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.util.Optional;
 
 import static kv.TestUtils.ts;
-import static kv.MemcomparableCodec.encodeString;
+import static kv.OrderPreservingCodec.encodeString;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 

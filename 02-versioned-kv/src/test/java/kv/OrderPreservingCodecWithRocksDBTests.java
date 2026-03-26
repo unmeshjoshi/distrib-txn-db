@@ -10,46 +10,50 @@ import org.rocksdb.RocksIterator;
 import static kv.TestUtils.ts;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-class MemcomparableCodecWithRocksDBTests {
+class OrderPreservingCodecWithRocksDBTests {
 
     private static byte[] newTimestamp(long wallClockTime) {
-        return MemcomparableCodec.encode(ts(wallClockTime));
+        return OrderPreservingCodec.encode(ts(wallClockTime));
     }
 
 
 
     @Test
-    public void rocksDBStoresKeysInAscendingOrder(@TempDir java.nio.file.Path tempDir) throws RocksDBException {
+    public void invertedTimestampEncodingOrdersNewerVersionsFirstInRocksDB(
+            @TempDir java.nio.file.Path tempDir) throws RocksDBException {
         RocksDB rocksDB = RocksDbMvccStore.createInstance(tempDir);
         rocksDB.put(newTimestamp(1000), "value1".getBytes());
         rocksDB.put(newTimestamp(2000), "value2".getBytes());
         rocksDB.put(newTimestamp(5000), "value5".getBytes());
 
         RocksIterator rocksIterator = rocksDB.newIterator();
-        rocksIterator.seek(newTimestamp(Long.MAX_VALUE)); //goes to key <= key.// with Inverted keys.
+        // RocksDB seek finds the first key >= target. Because timestamps are inverted,
+        // seeking to the maximum logical timestamp lands on the newest stored version.
+        rocksIterator.seek(newTimestamp(Long.MAX_VALUE));
         assertEquals("value5", new String(rocksIterator.value()));
         rocksIterator.next();
         assertEquals("value2", new String(rocksIterator.value()));
         rocksIterator.next();
         assertEquals("value1", new String(rocksIterator.value()));
-        //The keys are sorted as 5000->2000->1000
+        // The keys are sorted as 5000 -> 2000 -> 1000.
 
-        rocksIterator.seek(newTimestamp(3000)); //<=4 should give version 2
+        // Seeking to an as-of timestamp returns the first version visible at or below that time.
+        rocksIterator.seek(newTimestamp(3000));
         assertEquals("value2", new String(rocksIterator.value()));
     }
 
     @Test
-    public void rocksDBSeeksToPrefix(@TempDir java.nio.file.Path tempDir) throws RocksDBException {
+    public void seekingToLogicalKeyPrefixReturnsNewestVersionFirst(
+            @TempDir java.nio.file.Path tempDir) throws RocksDBException {
         RocksDB rocksDB = RocksDbMvccStore.createInstance(tempDir);
-        TestDB db = new TestDB(rocksDB);
-        db.put("author", ts(1000), "Martin");
-        db.put("author", ts(2000), "Unmesh");
-        db.put("title", ts(1500), "The Art of Computer Programming");
+        putVersion(rocksDB, "author", ts(1000), "Martin");
+        putVersion(rocksDB, "author", ts(2000), "Unmesh");
+        putVersion(rocksDB, "title", ts(1500), "The Art of Computer Programming");
 
         //for the same key prefix, keys are ordered inversely author_2000->author_1000
 
         RocksIterator rocksIterator = rocksDB.newIterator();
-        rocksIterator.seek(MemcomparableCodec.encodeString("author"));
+        rocksIterator.seek(OrderPreservingCodec.encodeString("author"));
         assertEquals("Unmesh", new String(rocksIterator.value()));
         rocksIterator.next();
         assertEquals("Martin", new String(rocksIterator.value()));
@@ -57,13 +61,10 @@ class MemcomparableCodecWithRocksDBTests {
         assertEquals("The Art of Computer Programming", new String(rocksIterator.value()));
     }
 
-    static class TestDB {
-        private final RocksDB rocksDB;
-        public TestDB(RocksDB rocksDB) throws RocksDBException {
-            this.rocksDB = rocksDB;
-        }
-        public void put(String key, HybridTimestamp timestamp, String value) throws RocksDBException {
-            rocksDB.put(MemcomparableCodec.encodeMVCCKey(new MVCCKey(key.getBytes(), timestamp)), MemcomparableCodec.encodeString(value));
-        }
+    private static void putVersion(RocksDB rocksDB, String key, HybridTimestamp timestamp, String value)
+            throws RocksDBException {
+        rocksDB.put(
+                OrderPreservingCodec.encodeMVCCKey(new MVCCKey(key.getBytes(), timestamp)),
+                OrderPreservingCodec.encodeString(value));
     }
 }

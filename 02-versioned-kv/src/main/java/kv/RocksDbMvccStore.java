@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
 
-import static kv.MemcomparableCodec.*;
+import static kv.OrderPreservingCodec.*;
 
 public final class RocksDbMvccStore implements MVCCStore, AutoCloseable {
     static {

@@ -29,8 +29,8 @@ public class Table {
         // https://github.com/yugabyte/yugabyte-db/blob/master/src/yb/dockv/doc_key.cc
         String physicalKey = tableId + "_" + rowKey + "_" + columnId;
         return store.put(
-                new MVCCKey(MemcomparableCodec.encodeString(physicalKey), timestamp),
-                MemcomparableCodec.encodeString(value)
+                new MVCCKey(OrderPreservingCodec.encodeString(physicalKey), timestamp),
+                OrderPreservingCodec.encodeString(value)
         );
     }
 
@@ -39,8 +39,8 @@ public class Table {
         for (Column column : row.getColumns()) {
             String physicalKey = tableId + "_" + row.getKey() + "_" + column.name();
             mutations.put(
-                    new MVCCKey(MemcomparableCodec.encodeString(physicalKey), timestamp),
-                    MemcomparableCodec.encodeString(column.value())
+                    new MVCCKey(OrderPreservingCodec.encodeString(physicalKey), timestamp),
+                    OrderPreservingCodec.encodeString(column.value())
             );
         }
         return store.putBatch(mutations);
@@ -48,28 +48,28 @@ public class Table {
 
     public Optional<String> get(String rowKey, String columnId, HybridTimestamp readTimestamp) {
         String physicalKey = tableId + "_" + rowKey + "_" + columnId;
-        return store.getAsOf(new MVCCKey(MemcomparableCodec.encodeString(physicalKey), readTimestamp))
-                .map(MemcomparableCodec::decodeString);
+        return store.getAsOf(new MVCCKey(OrderPreservingCodec.encodeString(physicalKey), readTimestamp))
+                .map(OrderPreservingCodec::decodeString);
     }
 
     public Optional<String> get(String rowKey, String columnId) {
         String physicalKey = tableId + "_" + rowKey + "_" + columnId;
-        return store.getLatest(MemcomparableCodec.encodeString(physicalKey))
-                .map(MemcomparableCodec::decodeString);
+        return store.getLatest(OrderPreservingCodec.encodeString(physicalKey))
+                .map(OrderPreservingCodec::decodeString);
     }
 
     public Row getRow(String rowKey, HybridTimestamp readTimestamp) {
-        byte[] physicalPrefix = MemcomparableCodec.encodeString(tableId + "_" + rowKey + "_");
+        byte[] physicalPrefix = OrderPreservingCodec.encodeString(tableId + "_" + rowKey + "_");
         Map<byte[], byte[]> fullMap = store.scanPrefixAsOf(physicalPrefix, readTimestamp);
         Row row = new Row(rowKey);
-        String decodedPrefix = MemcomparableCodec.decodeString(physicalPrefix);
+        String decodedPrefix = OrderPreservingCodec.decodeString(physicalPrefix);
         for (Map.Entry<byte[], byte[]> entry : fullMap.entrySet()) {
-            String fullKeyStr = MemcomparableCodec.decodeString(entry.getKey());
+            String fullKeyStr = OrderPreservingCodec.decodeString(entry.getKey());
             // This substring logic depends on the same delimiter-based encoding caveat described
             // above. It is correct only as long as table/row/column identifiers do not create
             // ambiguous composite keys.
             String colId = fullKeyStr.substring(decodedPrefix.length());
-            row.addColumn(colId, MemcomparableCodec.decodeString(entry.getValue()));
+            row.addColumn(colId, OrderPreservingCodec.decodeString(entry.getValue()));
         }
         return row;
     }

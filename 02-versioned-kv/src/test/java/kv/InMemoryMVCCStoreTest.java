@@ -14,8 +14,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class InMemoryMVCCStoreTest {
 
-    private byte[] encode(String v) { return MemcomparableCodec.encodeString(v); }
-    private String decode(byte[] v) { return MemcomparableCodec.decodeString(v); }
+    private byte[] encode(String v) { return OrderPreservingCodec.encodeString(v); }
+    private String decode(byte[] v) { return OrderPreservingCodec.decodeString(v); }
 
     @Test
     void testStoreAndFetchLatest() {
