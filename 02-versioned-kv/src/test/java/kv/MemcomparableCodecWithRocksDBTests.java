@@ -7,13 +7,13 @@ import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksIterator;
 
+import static kv.TestUtils.ts;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class MemcomparableCodecWithRocksDBTests {
 
     private static byte[] newTimestamp(long wallClockTime) {
-        HybridTimestamp t = new HybridTimestamp(wallClockTime, 0);
-        return MemcomparableCodec.encode(t);
+        return MemcomparableCodec.encode(ts(wallClockTime));
     }
 
 
@@ -42,9 +42,9 @@ class MemcomparableCodecWithRocksDBTests {
     public void rocksDBSeeksToPrefix(@TempDir java.nio.file.Path tempDir) throws RocksDBException {
         RocksDB rocksDB = RocksDbMvccStore.createInstance(tempDir);
         TestDB db = new TestDB(rocksDB);
-        db.put("author", new HybridTimestamp(1000, 0), "Martin");
-        db.put("author", new HybridTimestamp(2000, 0), "Unmesh");
-        db.put("title", new HybridTimestamp(1500, 0), "The Art of Computer Programming");
+        db.put("author", ts(1000), "Martin");
+        db.put("author", ts(2000), "Unmesh");
+        db.put("title", ts(1500), "The Art of Computer Programming");
 
         //for the same key prefix, keys are ordered inversely author_2000->author_1000
 

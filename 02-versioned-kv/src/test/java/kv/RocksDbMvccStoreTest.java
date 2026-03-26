@@ -1,11 +1,10 @@
 package kv;
-
-import clock.HybridTimestamp;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.util.Optional;
 
+import static kv.TestUtils.ts;
 import static kv.MemcomparableCodec.encodeString;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -48,9 +47,7 @@ class RocksDbMvccStoreTest {
     }
 
     private static MVCCKey newKey(String key, long wallClockTime) {
-        return new MVCCKey(encodeString(key),
-                new HybridTimestamp(
-                        wallClockTime, 0));
+        return new MVCCKey(encodeString(key), ts(wallClockTime));
     }
 
     private static void assertOptionalBytesEquals(byte[] expected, Optional<byte[]> actual) {

@@ -1,16 +1,14 @@
 package kv;
 
-import clock.HybridTimestamp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.nio.file.Path;
-import java.util.Optional;
 
+import static kv.TestUtils.ts;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TableTest {
 
@@ -51,8 +49,8 @@ class TableTest {
         Table customersTable = new Table("customers", sharedStore);
         Table ordersTable = new Table("orders", sharedStore);
 
-        HybridTimestamp t1 = new HybridTimestamp(1000, 0);
-        HybridTimestamp t2 = new HybridTimestamp(2000, 0);
+        var t1 = ts(1000);
+        var t2 = ts(2000);
 
         // Store typical customer attributes across multiple columns for "customer_1"
         customersTable.put("customer_1", "name", t1, "Alice Smith");
@@ -87,9 +85,9 @@ class TableTest {
     @Test
     void testAtomicRowInsertion() {
         Table customersTable = new Table("customers", sharedStore);
-        HybridTimestamp t1 = new HybridTimestamp(1000, 0);
-        HybridTimestamp t2 = new HybridTimestamp(2000, 0);
-        HybridTimestamp t3 = new HybridTimestamp(3000, 0);
+        var t1 = ts(1000);
+        var t2 = ts(2000);
+        var t3 = ts(3000);
 
         java.util.Map<String, String> rowV1 = new java.util.HashMap<>();
         rowV1.put("name", "Alice Smith");
@@ -142,8 +140,7 @@ class TableTest {
         assertEquals("alice.johnson@example.com", historicalRowAtT3.get("email"));
         assertEquals("42 Ocean Avenue", historicalRowAtT3.get("address"));
         
-        // Assert point in time snapshot isolated querying across columns
-        java.util.Map<String, String> historicalRow = customersTable.getRow("customer_1", new HybridTimestamp(500, 0));
+        java.util.Map<String, String> historicalRow = customersTable.getRow("customer_1", ts(500));
         assertEquals(0, historicalRow.size(), "Row shouldn't exist prior to logical bounds assignment!");
     }
 }

@@ -7,6 +7,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Optional;
 
+import static kv.TestUtils.ts;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -19,10 +20,10 @@ class InMemoryMVCCStoreTest {
     @Test
     void testStoreAndFetchLatest() {
         MVCCStore store = new InMemoryMVCCStore();
-        
-        HybridTimestamp t1 = new HybridTimestamp(1000, 0);
-        HybridTimestamp t2 = new HybridTimestamp(1500, 0);
-        HybridTimestamp t3 = new HybridTimestamp(2000, 0);
+
+        var t1 = ts(1000);
+        var t2 = ts(1500);
+        var t3 = ts(2000);
 
         String accountID = "account1";
         store.put(new MVCCKey(encode(accountID), t1), encode("{balance:100}"));
@@ -38,9 +39,9 @@ class InMemoryMVCCStoreTest {
     void testFetchAsOfTime() {
         MVCCStore store = new InMemoryMVCCStore();
 
-        HybridTimestamp t1 = new HybridTimestamp(1000, 0);
-        HybridTimestamp t2 = new HybridTimestamp(1500, 0);
-        HybridTimestamp t3 = new HybridTimestamp(2000, 0);
+        var t1 = ts(1000);
+        var t2 = ts(1500);
+        var t3 = ts(2000);
 
         String accountId = "account1";
         store.put(new MVCCKey(encode(accountId), t1), encode("{balance:100}"));
@@ -51,11 +52,11 @@ class InMemoryMVCCStoreTest {
         assertTrue(asOfT2.isPresent());
         assertEquals("{balance:500}", decode(asOfT2.get()));
 
-        Optional<byte[]> asOfMid = store.getAsOf(new MVCCKey(encode(accountId), new HybridTimestamp(1200, 0)));
+        Optional<byte[]> asOfMid = store.getAsOf(new MVCCKey(encode(accountId), ts(1200)));
         assertTrue(asOfMid.isPresent());
         assertEquals("{balance:100}", decode(asOfMid.get()));
 
-        Optional<byte[]> beforeT1 = store.getAsOf(new MVCCKey(encode(accountId), new HybridTimestamp(500, 0)));
+        Optional<byte[]> beforeT1 = store.getAsOf(new MVCCKey(encode(accountId), ts(500)));
         assertTrue(beforeT1.isEmpty());
     }
 
@@ -63,22 +64,22 @@ class InMemoryMVCCStoreTest {
     void testCrossKeyBoundary() {
         MVCCStore store = new InMemoryMVCCStore();
 
-        HybridTimestamp t1 = new HybridTimestamp(1000, 0);
-        HybridTimestamp t2 = new HybridTimestamp(1500, 0);
+        var t1 = ts(1000);
+        var t2 = ts(1500);
 
         store.put(new MVCCKey(encode("key1"), t1), encode("valueA1"));
         store.put(new MVCCKey(encode("key2"), t2), encode("valueB2"));
 
-        Optional<byte[]> noKey1 = store.getAsOf(new MVCCKey(encode("key1"), new HybridTimestamp(500, 0)));
+        Optional<byte[]> noKey1 = store.getAsOf(new MVCCKey(encode("key1"), ts(500)));
         assertTrue(noKey1.isEmpty());
     }
 
     @Test
     void testGetVersionsUpTo() {
         MVCCStore store = new InMemoryMVCCStore();
-        HybridTimestamp t1 = new HybridTimestamp(1000, 0);
-        HybridTimestamp t2 = new HybridTimestamp(1500, 0);
-        HybridTimestamp t3 = new HybridTimestamp(2000, 0);
+        var t1 = ts(1000);
+        var t2 = ts(1500);
+        var t3 = ts(2000);
 
         store.put(new MVCCKey(encode("k1"), t1), encode("v1"));
         store.put(new MVCCKey(encode("k1"), t2), encode("v2"));
@@ -98,9 +99,9 @@ class InMemoryMVCCStoreTest {
     @Test
     void testScanPrefixAsOfReturnsVisibleVersionPerLogicalKey() {
         MVCCStore store = new InMemoryMVCCStore();
-        HybridTimestamp t1 = new HybridTimestamp(1000, 0);
-        HybridTimestamp t2 = new HybridTimestamp(2000, 0);
-        HybridTimestamp t3 = new HybridTimestamp(3000, 0);
+        var t1 = ts(1000);
+        var t2 = ts(2000);
+        var t3 = ts(3000);
 
         store.put(new MVCCKey(encode("customers_customer_1_name"), t1), encode("Alice"));
         store.put(new MVCCKey(encode("customers_customer_1_address"), t1), encode("Old Address"));
