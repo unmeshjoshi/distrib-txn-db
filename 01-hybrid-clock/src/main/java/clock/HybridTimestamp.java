@@ -1,12 +1,17 @@
 package clock;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.util.Objects;
 
 public class HybridTimestamp implements Comparable<HybridTimestamp> {
     private final long wallClockTime;
     private final int ticks;
 
-    public HybridTimestamp(long wallClockTime, int ticks) {
+    @JsonCreator
+    public HybridTimestamp(@JsonProperty("wallClockTime") long wallClockTime,
+                           @JsonProperty("ticks") int ticks) {
         this.wallClockTime = wallClockTime;
         this.ticks = ticks;
     }
