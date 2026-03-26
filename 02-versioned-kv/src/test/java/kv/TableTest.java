@@ -89,26 +89,26 @@ class TableTest {
         var t2 = ts(2000);
         var t3 = ts(3000);
 
-        java.util.Map<String, String> rowV1 = new java.util.HashMap<>();
-        rowV1.put("name", "Alice Smith");
-        rowV1.put("email", "alice@example.com");
-        rowV1.put("address", "123 Main St");
+        Row rowV1 = new Row("customer_1");
+        rowV1.addColumn("name", "Alice Smith");
+        rowV1.addColumn("email", "alice@example.com");
+        rowV1.addColumn("address", "123 Main St");
 
         // Dynamically bulk insert via atomic WriteBatch 
-        customersTable.insertRow("customer_1", rowV1, t1);
+        customersTable.insertRow(rowV1, t1);
 
-        java.util.Map<String, String> rowV2 = new java.util.HashMap<>();
-        rowV2.put("name", "Alice Smith");
-        rowV2.put("email", "alice@example.com");
-        rowV2.put("address", "220 Main Street");
+        Row rowV2 = new Row("customer_1");
+        rowV2.addColumn("name", "Alice Smith");
+        rowV2.addColumn("email", "alice@example.com");
+        rowV2.addColumn("address", "220 Main Street");
         // Dynamically bulk insert via atomic WriteBatch
-        customersTable.insertRow("customer_1", rowV2, t2);
+        customersTable.insertRow(rowV2, t2);
 
-        java.util.Map<String, String> rowV3 = new java.util.HashMap<>();
-        rowV3.put("name", "Alice Johnson");
-        rowV3.put("email", "alice.johnson@example.com");
-        rowV3.put("address", "42 Ocean Avenue");
-        customersTable.insertRow("customer_1", rowV3, t3);
+        Row rowV3 = new Row("customer_1");
+        rowV3.addColumn("name", "Alice Johnson");
+        rowV3.addColumn("email", "alice.johnson@example.com");
+        rowV3.addColumn("address", "42 Ocean Avenue");
+        customersTable.insertRow(rowV3, t3);
 
         // Validate latest row retrieval
         assertEquals("Alice Johnson", customersTable.get("customer_1", "name").get());
@@ -116,31 +116,31 @@ class TableTest {
         assertEquals("42 Ocean Avenue", customersTable.get("customer_1", "address").get());
 
         // Validate latest complete row parsing
-        java.util.Map<String, String> completeRow = customersTable.getRow("customer_1");
+        Row completeRow = customersTable.getRow("customer_1");
         assertEquals(3, completeRow.size());
         assertEquals("Alice Johnson", completeRow.get("name"));
         assertEquals("alice.johnson@example.com", completeRow.get("email"));
         assertEquals("42 Ocean Avenue", completeRow.get("address"));
 
-        java.util.Map<String, String> historicalRowAtT1 = customersTable.getRow("customer_1", t1);
+        Row historicalRowAtT1 = customersTable.getRow("customer_1", t1);
         assertEquals(3, historicalRowAtT1.size());
         assertEquals("Alice Smith", historicalRowAtT1.get("name"));
         assertEquals("alice@example.com", historicalRowAtT1.get("email"));
         assertEquals("123 Main St", historicalRowAtT1.get("address"));
 
-        java.util.Map<String, String> historicalRowAtT2 = customersTable.getRow("customer_1", t2);
+        Row historicalRowAtT2 = customersTable.getRow("customer_1", t2);
         assertEquals(3, historicalRowAtT2.size());
         assertEquals("Alice Smith", historicalRowAtT2.get("name"));
         assertEquals("alice@example.com", historicalRowAtT2.get("email"));
         assertEquals("220 Main Street", historicalRowAtT2.get("address"));
 
-        java.util.Map<String, String> historicalRowAtT3 = customersTable.getRow("customer_1", t3);
+        Row historicalRowAtT3 = customersTable.getRow("customer_1", t3);
         assertEquals(3, historicalRowAtT3.size());
         assertEquals("Alice Johnson", historicalRowAtT3.get("name"));
         assertEquals("alice.johnson@example.com", historicalRowAtT3.get("email"));
         assertEquals("42 Ocean Avenue", historicalRowAtT3.get("address"));
         
-        java.util.Map<String, String> historicalRow = customersTable.getRow("customer_1", ts(500));
+        Row historicalRow = customersTable.getRow("customer_1", ts(500));
         assertEquals(0, historicalRow.size(), "Row shouldn't exist prior to logical bounds assignment!");
     }
 }

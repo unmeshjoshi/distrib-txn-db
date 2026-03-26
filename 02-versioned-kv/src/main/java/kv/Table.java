@@ -2,8 +2,8 @@ package kv;
 
 import clock.HybridTimestamp;
 
-import java.util.Map;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
 public class Table {
@@ -22,6 +22,11 @@ public class Table {
         // row reconstruction natural. A whole-row value would be simpler and more compact for full
         // row reads, but every column update would rewrite the entire row and row history would be
         // tracked at row granularity instead of per column.
+        // Caveat: this key format is still ambiguous because it relies on "_" as a delimiter.
+        // A row key / column id pair such as ("a_b", "c") collides with ("a", "b_c").
+        // A future refactor should move this into a structured key codec with explicit boundaries.
+        // YugabyteDB's DocKey encoding is a good reference for this kind of structured key layout:
+        // https://github.com/yugabyte/yugabyte-db/blob/master/src/yb/dockv/doc_key.cc
         String physicalKey = tableId + "_" + rowKey + "_" + columnId;
         return store.put(
                 new MVCCKey(MemcomparableCodec.encodeString(physicalKey), timestamp),
@@ -29,13 +34,13 @@ public class Table {
         );
     }
 
-    public boolean insertRow(String rowKey, Map<String, String> columns, HybridTimestamp timestamp) {
+    public boolean insertRow(Row row, HybridTimestamp timestamp) {
         Map<MVCCKey, byte[]> mutations = new HashMap<>();
-        for (Map.Entry<String, String> entry : columns.entrySet()) {
-            String physicalKey = tableId + "_" + rowKey + "_" + entry.getKey();
+        for (Column column : row.getColumns()) {
+            String physicalKey = tableId + "_" + row.getKey() + "_" + column.name();
             mutations.put(
                     new MVCCKey(MemcomparableCodec.encodeString(physicalKey), timestamp),
-                    MemcomparableCodec.encodeString(entry.getValue())
+                    MemcomparableCodec.encodeString(column.value())
             );
         }
         return store.putBatch(mutations);
@@ -53,20 +58,23 @@ public class Table {
                 .map(MemcomparableCodec::decodeString);
     }
 
-    public Map<String, String> getRow(String rowKey, HybridTimestamp readTimestamp) {
+    public Row getRow(String rowKey, HybridTimestamp readTimestamp) {
         byte[] physicalPrefix = MemcomparableCodec.encodeString(tableId + "_" + rowKey + "_");
         Map<byte[], byte[]> fullMap = store.scanPrefixAsOf(physicalPrefix, readTimestamp);
-        
-        Map<String, String> columns = new HashMap<>();
+        Row row = new Row(rowKey);
+        String decodedPrefix = MemcomparableCodec.decodeString(physicalPrefix);
         for (Map.Entry<byte[], byte[]> entry : fullMap.entrySet()) {
             String fullKeyStr = MemcomparableCodec.decodeString(entry.getKey());
-            String colId = fullKeyStr.substring(MemcomparableCodec.decodeString(physicalPrefix).length()); // extract column identifier safely
-            columns.put(colId, MemcomparableCodec.decodeString(entry.getValue()));
+            // This substring logic depends on the same delimiter-based encoding caveat described
+            // above. It is correct only as long as table/row/column identifiers do not create
+            // ambiguous composite keys.
+            String colId = fullKeyStr.substring(decodedPrefix.length());
+            row.addColumn(colId, MemcomparableCodec.decodeString(entry.getValue()));
         }
-        return columns;
+        return row;
     }
 
-    public Map<String, String> getRow(String rowKey) {
+    public Row getRow(String rowKey) {
         return getRow(rowKey, new HybridTimestamp(Long.MAX_VALUE, Integer.MAX_VALUE));
     }
 }
