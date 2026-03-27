@@ -16,6 +16,12 @@ public class InMemoryMVCCStore implements MVCCStore {
     }
 
     @Override
+    public boolean delete(MVCCKey key) {
+        kvStore.remove(key);
+        return true;
+    }
+
+    @Override
     public boolean putBatch(Map<MVCCKey, byte[]> mutations) {
         for (Map.Entry<MVCCKey, byte[]> entry : mutations.entrySet()) {
             kvStore.put(entry.getKey(), entry.getValue());

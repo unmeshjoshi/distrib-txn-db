@@ -10,6 +10,8 @@ import java.util.Optional;
  */
 public interface MVCCStore {
     boolean put(MVCCKey key, byte[] value);
+
+    boolean delete(MVCCKey key);
     
     boolean putBatch(Map<MVCCKey, byte[]> mutations);
     

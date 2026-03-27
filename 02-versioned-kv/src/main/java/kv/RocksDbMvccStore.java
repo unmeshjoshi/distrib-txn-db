@@ -52,6 +52,16 @@ public final class RocksDbMvccStore implements MVCCStore, AutoCloseable {
     }
 
     @Override
+    public boolean delete(MVCCKey key) {
+        try {
+            db.delete(encodeMVCCKey(key));
+            return true;
+        } catch (RocksDBException e) {
+            throw new IllegalStateException("Unable to delete key-value pair", e);
+        }
+    }
+
+    @Override
     public boolean putBatch(Map<MVCCKey, byte[]> mutations) {
         try (WriteBatch writeBatch = new WriteBatch();
              WriteOptions writeOptions = new WriteOptions()) {
