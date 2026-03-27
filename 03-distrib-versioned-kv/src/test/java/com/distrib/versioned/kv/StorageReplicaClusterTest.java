@@ -6,10 +6,10 @@ import com.tickloom.future.ListenableFuture;
 import com.tickloom.testkit.Cluster;
 import kv.InMemoryMVCCStore;
 import kv.MVCCKey;
+import kv.MVCCStore;
 import kv.OrderPreservingCodec;
 import org.junit.jupiter.api.Test;
 
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -27,22 +27,23 @@ class StorageReplicaClusterTest {
     @Test
     void clientRoutesDifferentKeysToDifferentReplicas() throws Exception {
         List<ProcessId> storageNodes = List.of(STORAGE_NODE_1, STORAGE_NODE_2, STORAGE_NODE_3);
-        Map<ProcessId, InMemoryMVCCStore> storesByReplica = new LinkedHashMap<>();
-        storageNodes.forEach(processId -> storesByReplica.put(processId, new InMemoryMVCCStore()));
 
         try (Cluster cluster = new Cluster()
                 .withProcessIds(storageNodes)
                 .useSimulatedNetwork()
-                .build((peerIds, params) -> new StorageReplica(storesByReplica.get(params.id()), peerIds, params))
+                .build((peerIds, params) -> new StorageReplica(new InMemoryMVCCStore(), peerIds, params))
                 .start()) {
 
             StorageReplicaClient client = cluster.newClient(CLIENT, StorageReplicaClient::new);
-            Map<ProcessId, String> keyByReplica = keysByReplica(client, storageNodes);
+            Map<String, String> kv =  Map.of(
+                    "account-101", "1000",
+                    "account-202", "2500",
+                    "account-303", "500"
+            );
 
-            for (Map.Entry<ProcessId, String> entry : keyByReplica.entrySet()) {
-                String key = entry.getValue();
-                String value = "value-for-" + entry.getKey().name();
-
+            for (Map.Entry<String, String> entry : kv.entrySet()) {
+                String key = entry.getKey();
+                String value = entry.getValue();
                 WriteResponse writeResponse = await(cluster, client.write(key, value, ts(1000)));
                 assertTrue(writeResponse.success());
 
@@ -51,9 +52,11 @@ class StorageReplicaClusterTest {
                 assertEquals(value, readResponse.value());
             }
 
-            for (Map.Entry<ProcessId, String> entry : keyByReplica.entrySet()) {
-                assertEquals(Optional.of("value-for-" + entry.getKey().name()),
-                        storedValue(storesByReplica.get(entry.getKey()), entry.getValue(), ts(5000)));
+            for (Map.Entry<String, String> entry : kv.entrySet()) {
+                ProcessId owningReplica = client.replicaFor(entry.getKey());
+                StorageReplica replica = (StorageReplica) cluster.getProcess(owningReplica);
+                assertEquals(Optional.of(entry.getValue()),
+                        storedValue(replica.store(), entry.getKey(), ts(5000)));
             }
         }
     }
@@ -63,17 +66,8 @@ class StorageReplicaClusterTest {
         return future.getResult();
     }
 
-    private Map<ProcessId, String> keysByReplica(StorageReplicaClient client, List<ProcessId> replicas) {
-        Map<ProcessId, String> keyByReplica = new LinkedHashMap<>();
-        int candidate = 0;
-        while (keyByReplica.size() < replicas.size()) {
-            String key = "account-" + candidate++;
-            keyByReplica.putIfAbsent(client.replicaFor(key), key);
-        }
-        return keyByReplica;
-    }
 
-    private Optional<String> storedValue(InMemoryMVCCStore store, String key, HybridTimestamp readTimestamp) {
+    private Optional<String> storedValue(MVCCStore store, String key, HybridTimestamp readTimestamp) {
         return store.getAsOf(new MVCCKey(OrderPreservingCodec.encodeString(key), readTimestamp))
                 .map(OrderPreservingCodec::decodeString);
     }

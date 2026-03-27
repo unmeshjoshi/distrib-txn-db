@@ -25,6 +25,10 @@ public class StorageReplica extends Replica {
         this.hybridClock = new HybridClock(() -> clock.now());
     }
 
+    MVCCStore store() {
+        return store;
+    }
+
     @Override
     protected Map<MessageType, Handler> initialiseHandlers() {
        return Map.of(
