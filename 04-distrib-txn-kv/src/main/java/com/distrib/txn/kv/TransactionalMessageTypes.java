@@ -26,4 +26,8 @@ public final class TransactionalMessageTypes {
             new MessageType("RESOLVE_TRANSACTION_REQUEST");
     public static final MessageType RESOLVE_TRANSACTION_RESPONSE =
             new MessageType("RESOLVE_TRANSACTION_RESPONSE");
+    public static final MessageType GET_TRANSACTION_STATUS_REQUEST =
+            new MessageType("GET_TRANSACTION_STATUS_REQUEST");
+    public static final MessageType GET_TRANSACTION_STATUS_RESPONSE =
+            new MessageType("GET_TRANSACTION_STATUS_RESPONSE");
 }

@@ -17,10 +17,12 @@ import java.util.Set;
 
 public class TransactionalStorageClient extends ClusterClient {
     private final Map<TxnId, Map<ProcessId, Set<String>>> writesByParticipant;
+    private final List<ProcessId> canonicalReplicas;
 
     public TransactionalStorageClient(List<ProcessId> replicas, ProcessParams processParams) {
         super(replicas, processParams);
         this.writesByParticipant = new HashMap<>();
+        this.canonicalReplicas = ReplicaRouting.canonicalReplicaOrder(replicas);
     }
 
     public ListenableFuture<BeginTransactionResponse> beginTransaction(
@@ -64,11 +66,12 @@ public class TransactionalStorageClient extends ClusterClient {
             HybridTimestamp readTimestamp,
             HybridTimestamp clientTime
     ) {
-        return sendRequest(
+        ListenableFuture<TxnReadResponse> future = sendRequest(
                 new TxnReadRequest(txnId, key, readTimestamp, clientTime),
                 replicaFor(key),
                 TransactionalMessageTypes.TXN_READ_REQUEST
         );
+        return future;
     }
 
     public ListenableFuture<CommitTransactionResponse> commit(
@@ -83,13 +86,11 @@ public class TransactionalStorageClient extends ClusterClient {
     }
 
     ProcessId coordinatorFor(TxnId txnId) {
-        int index = Math.floorMod(txnId.toString().hashCode(), replicaEndpoints.size());
-        return replicaEndpoints.get(index);
+        return ReplicaRouting.coordinatorFor(txnId, canonicalReplicas);
     }
 
     ProcessId replicaFor(String key) {
-        int index = Math.floorMod(key.hashCode(), replicaEndpoints.size());
-        return replicaEndpoints.get(index);
+        return ReplicaRouting.replicaFor(key, canonicalReplicas);
     }
 
     private void trackWrite(TxnId txnId, ProcessId participant, String key) {
