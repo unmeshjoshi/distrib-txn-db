@@ -205,9 +205,11 @@ public class SerializableTransactionalStorageReplica extends Replica {
             TxnWriteRequest request,
             HybridTimestamp intentTimestamp
     ) {
-        Optional<StoredIntent> foreignIntent = findLatestForeignIntent(request.key(), request.txnId());
-        if (foreignIntent.isPresent()) {
-            checkForeignIntentStatus(message, request, intentTimestamp, foreignIntent.get());
+        Optional<StoredIntent> intentFromOtherTransaction =
+                findLatestIntentFromOtherTransaction(request.key(), request.txnId());
+        if (intentFromOtherTransaction.isPresent()) {
+            checkIntentFromOtherTransactionStatus(
+                    message, request, intentTimestamp, intentFromOtherTransaction.get());
             return;
         }
 
@@ -248,9 +250,11 @@ public class SerializableTransactionalStorageReplica extends Replica {
                 return;
             }
 
-            Optional<StoredIntent> foreignIntent = findLatestForeignIntent(request.key(), request.txnId());
-            if (foreignIntent.isPresent()) {
-                checkForeignIntentStatus(message, request, propagatedTime, foreignIntent.get());
+            Optional<StoredIntent> intentFromOtherTransaction =
+                    findLatestIntentFromOtherTransaction(request.key(), request.txnId());
+            if (intentFromOtherTransaction.isPresent()) {
+                checkIntentFromOtherTransactionStatus(
+                        message, request, propagatedTime, intentFromOtherTransaction.get());
                 return;
             }
 
@@ -314,11 +318,11 @@ public class SerializableTransactionalStorageReplica extends Replica {
         return Optional.ofNullable(conflictingTxn);
     }
 
-    private void checkForeignIntentStatus(
+    private void checkIntentFromOtherTransactionStatus(
             Message clientMessage,
             TxnWriteRequest writeRequest,
             HybridTimestamp intentTimestamp,
-            StoredIntent foreignIntent
+            StoredIntent intentFromOtherTransaction
     ) {
         String correlationId = idGen.generateCorrelationId("get-status");
         waitingList.add(correlationId, new com.tickloom.messaging.RequestCallback<>() {
@@ -335,7 +339,8 @@ public class SerializableTransactionalStorageReplica extends Replica {
                     return;
                 }
 
-                handleForeignIntentStatus(clientMessage, writeRequest, intentTimestamp, foreignIntent, statusResponse);
+                handleIntentFromOtherTransactionStatus(
+                        clientMessage, writeRequest, intentTimestamp, intentFromOtherTransaction, statusResponse);
             }
 
             @Override
@@ -349,18 +354,19 @@ public class SerializableTransactionalStorageReplica extends Replica {
         });
 
         send(createMessage(
-                coordinatorFor(foreignIntent.intentRecord().txnId()),
+                coordinatorFor(intentFromOtherTransaction.intentRecord().txnId()),
                 correlationId,
-                new GetTransactionStatusRequest(foreignIntent.intentRecord().txnId(), hybridClock.now()),
+                new GetTransactionStatusRequest(
+                        intentFromOtherTransaction.intentRecord().txnId(), hybridClock.now()),
                 TransactionalMessageTypes.GET_TRANSACTION_STATUS_REQUEST
         ));
     }
 
-    private void checkForeignIntentStatus(
+    private void checkIntentFromOtherTransactionStatus(
             Message clientMessage,
             TxnReadRequest readRequest,
             HybridTimestamp propagatedTime,
-            StoredIntent foreignIntent
+            StoredIntent intentFromOtherTransaction
     ) {
         String correlationId = idGen.generateCorrelationId("get-status");
         waitingList.add(correlationId, new com.tickloom.messaging.RequestCallback<>() {
@@ -377,7 +383,8 @@ public class SerializableTransactionalStorageReplica extends Replica {
                     return;
                 }
 
-                handleForeignIntentStatus(clientMessage, readRequest, propagatedTime, foreignIntent, statusResponse);
+                handleIntentFromOtherTransactionStatus(
+                        clientMessage, readRequest, propagatedTime, intentFromOtherTransaction, statusResponse);
             }
 
             @Override
@@ -391,18 +398,19 @@ public class SerializableTransactionalStorageReplica extends Replica {
         });
 
         send(createMessage(
-                coordinatorFor(foreignIntent.intentRecord().txnId()),
+                coordinatorFor(intentFromOtherTransaction.intentRecord().txnId()),
                 correlationId,
-                new GetTransactionStatusRequest(foreignIntent.intentRecord().txnId(), hybridClock.now()),
+                new GetTransactionStatusRequest(
+                        intentFromOtherTransaction.intentRecord().txnId(), hybridClock.now()),
                 TransactionalMessageTypes.GET_TRANSACTION_STATUS_REQUEST
         ));
     }
 
-    private void handleForeignIntentStatus(
+    private void handleIntentFromOtherTransactionStatus(
             Message clientMessage,
             TxnWriteRequest writeRequest,
             HybridTimestamp intentTimestamp,
-            StoredIntent foreignIntent,
+            StoredIntent intentFromOtherTransaction,
             GetTransactionStatusResponse statusResponse
     ) {
         switch (statusResponse.status()) {
@@ -421,21 +429,22 @@ public class SerializableTransactionalStorageReplica extends Replica {
                     );
                     return;
                 }
-                resolveCommittedIntent(writeRequest.key(), foreignIntent, statusResponse.commitTimestamp());
+                resolveCommittedIntent(
+                        writeRequest.key(), intentFromOtherTransaction, statusResponse.commitTimestamp());
                 completeWrite(clientMessage, writeRequest, intentTimestamp);
             }
             case ABORTED -> {
-                intentStore.delete(foreignIntent.key());
+                intentStore.delete(intentFromOtherTransaction.key());
                 completeWrite(clientMessage, writeRequest, intentTimestamp);
             }
         }
     }
 
-    private void handleForeignIntentStatus(
+    private void handleIntentFromOtherTransactionStatus(
             Message clientMessage,
             TxnReadRequest readRequest,
             HybridTimestamp propagatedTime,
-            StoredIntent foreignIntent,
+            StoredIntent intentFromOtherTransaction,
             GetTransactionStatusResponse statusResponse
     ) {
         switch (statusResponse.status()) {
@@ -454,7 +463,8 @@ public class SerializableTransactionalStorageReplica extends Replica {
                     );
                     return;
                 }
-                resolveCommittedIntent(readRequest.key(), foreignIntent, statusResponse.commitTimestamp());
+                resolveCommittedIntent(
+                        readRequest.key(), intentFromOtherTransaction, statusResponse.commitTimestamp());
                 sendResponse(
                         clientMessage,
                         readCommittedAndRecordProvisional(readRequest, propagatedTime),
@@ -462,7 +472,7 @@ public class SerializableTransactionalStorageReplica extends Replica {
                 );
             }
             case ABORTED -> {
-                intentStore.delete(foreignIntent.key());
+                intentStore.delete(intentFromOtherTransaction.key());
                 sendResponse(
                         clientMessage,
                         readCommittedAndRecordProvisional(readRequest, propagatedTime),
@@ -496,7 +506,7 @@ public class SerializableTransactionalStorageReplica extends Replica {
         return Optional.ofNullable(latestValue);
     }
 
-    private Optional<StoredIntent> findLatestForeignIntent(String key, TxnId txnId) {
+    private Optional<StoredIntent> findLatestIntentFromOtherTransaction(String key, TxnId txnId) {
         Optional<StoredIntent> latestIntent = findLatestIntent(key);
         if (latestIntent.isEmpty()) {
             return Optional.empty();
@@ -549,9 +559,16 @@ public class SerializableTransactionalStorageReplica extends Replica {
         }
     }
 
-    private void resolveCommittedIntent(String key, StoredIntent foreignIntent, HybridTimestamp commitTimestamp) {
-        committedStore.put(versionedKey(key, commitTimestamp), encodeCommittedValue(foreignIntent));
-        intentStore.delete(foreignIntent.key());
+    private void resolveCommittedIntent(
+            String key,
+            StoredIntent intentFromOtherTransaction,
+            HybridTimestamp commitTimestamp
+    ) {
+        committedStore.put(
+                versionedKey(key, commitTimestamp),
+                encodeCommittedValue(intentFromOtherTransaction)
+        );
+        intentStore.delete(intentFromOtherTransaction.key());
     }
 
     private GetTransactionStatusResponse getTransactionStatus(

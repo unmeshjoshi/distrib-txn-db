@@ -17,7 +17,7 @@ class SerializableIntentResolutionTest {
     private static final ProcessId CLIENT_2 = ProcessId.of("client-2");
 
     @Test
-    void txnWriteFailsWhenForeignIntentTransactionIsStillPending() throws Exception {
+    void txnWriteFailsWhenIntentFromOtherTransactionIsStillPending() throws Exception {
         try (Cluster cluster = new Cluster()
                 .withProcessIds(List.of(STORAGE_NODE))
                 .useSimulatedNetwork()
@@ -49,7 +49,7 @@ class SerializableIntentResolutionTest {
     }
 
     @Test
-    void txnReadFailsWhenForeignIntentTransactionIsStillPending() throws Exception {
+    void txnReadFailsWhenIntentFromOtherTransactionIsStillPending() throws Exception {
         try (Cluster cluster = new Cluster()
                 .withProcessIds(List.of(STORAGE_NODE))
                 .useSimulatedNetwork()

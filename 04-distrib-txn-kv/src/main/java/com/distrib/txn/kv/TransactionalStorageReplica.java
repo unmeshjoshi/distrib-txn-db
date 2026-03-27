@@ -102,7 +102,7 @@ public class TransactionalStorageReplica extends Replica {
         TxnWriteRequest request = deserializePayload(message.payload(), TxnWriteRequest.class);
         HybridTimestamp propagatedTime = mergeClock(request.clientTime());
 
-        beginWriteIntent(message, request, propagatedTime);
+        writeItentFor(message, request, propagatedTime);
     }
 
     private void handleTxnReadRequest(Message message) {
@@ -114,7 +114,7 @@ public class TransactionalStorageReplica extends Replica {
     private void handleCommitTransactionRequest(Message message) {
         CommitTransactionRequest request = deserializePayload(message.payload(), CommitTransactionRequest.class);
         HybridTimestamp propagatedTime = mergeClock(request.clientTime());
-        beginCommit(message, request, propagatedTime);
+        commitTransaction(message, request, propagatedTime);
     }
 
     private void handleResolveTransactionRequest(Message message) {
@@ -198,9 +198,11 @@ public class TransactionalStorageReplica extends Replica {
                 return;
             }
 
-            Optional<StoredIntent> foreignIntent = findLatestForeignIntent(request.key(), request.txnId());
-            if (foreignIntent.isPresent()) {
-                checkForeignIntentStatus(message, request, propagatedTime, foreignIntent.get());
+            Optional<StoredIntent> intentFromOtherTransaction =
+                    findLatestIntentFromOtherTransaction(request.key(), request.txnId());
+            if (intentFromOtherTransaction.isPresent()) {
+                checkAndResolveIntents(
+                        message, request, propagatedTime, intentFromOtherTransaction.get());
                 return;
             }
 
@@ -247,22 +249,23 @@ public class TransactionalStorageReplica extends Replica {
      * @param request
      * @param intentTimestamp
      */
-    private void beginWriteIntent(
+    private void writeItentFor(
             Message message,
             TxnWriteRequest request,
             HybridTimestamp intentTimestamp
     ) {
-        Optional<StoredIntent> foreignIntent = findLatestForeignIntent(request);
-        if (foreignIntent.isEmpty()) {
+        Optional<StoredIntent> intentFromOtherTransaction = findLatestIntentFromOtherTransaction(request);
+        if (intentFromOtherTransaction.isEmpty()) {
             TxnWriteResponse response = writeIntent(request, intentTimestamp);
             sendResponse(message, response, TransactionalMessageTypes.TXN_WRITE_RESPONSE);
             return;
         }
 
-        checkForeignIntentStatus(message, request, intentTimestamp, foreignIntent.get());
+        checkAndResolveIntents(
+                message, request, intentTimestamp, intentFromOtherTransaction.get());
     }
 
-    private void beginCommit(
+    private void commitTransaction(
             Message message,
             CommitTransactionRequest request,
             HybridTimestamp propagatedTime
@@ -289,6 +292,9 @@ public class TransactionalStorageReplica extends Replica {
                 txnRecord.isolationLevel()
         ));
 
+        //We do not wait for responses for resolve requests.
+        // Worst case even if these are lost, the resolution mechanism on individual nodes
+        //handling read and write requests should fix it.
         sendResolveRequests(
                 request.txnId(),
                 request.participantWrites(),
@@ -321,11 +327,11 @@ public class TransactionalStorageReplica extends Replica {
         }
     }
 
-    private void checkForeignIntentStatus(
+    private void checkAndResolveIntents(
             Message clientMessage,
             TxnWriteRequest writeRequest,
             HybridTimestamp intentTimestamp,
-            StoredIntent foreignIntent
+            StoredIntent intentFromOtherTransaction
     ) {
         String correlationId = idGen.generateCorrelationId("get-status");
         waitingList.add(correlationId, new com.tickloom.messaging.RequestCallback<>() {
@@ -338,7 +344,8 @@ public class TransactionalStorageReplica extends Replica {
                     return;
                 }
 
-                handleForeignIntentStatus(clientMessage, writeRequest, intentTimestamp, foreignIntent, statusResponse);
+                handleIntentFromOtherTransactionStatus(
+                        clientMessage, writeRequest, intentTimestamp, intentFromOtherTransaction, statusResponse);
             }
 
             @Override
@@ -348,18 +355,19 @@ public class TransactionalStorageReplica extends Replica {
         });
 
         send(createMessage(
-                coordinatorFor(foreignIntent.intentRecord().txnId()),
+                coordinatorFor(intentFromOtherTransaction.intentRecord().txnId()),
                 correlationId,
-                new GetTransactionStatusRequest(foreignIntent.intentRecord().txnId(), hybridClock.now()),
+                new GetTransactionStatusRequest(
+                        intentFromOtherTransaction.intentRecord().txnId(), hybridClock.now()),
                 TransactionalMessageTypes.GET_TRANSACTION_STATUS_REQUEST
         ));
     }
 
-    private void checkForeignIntentStatus(
+    private void checkAndResolveIntents(
             Message clientMessage,
             TxnReadRequest readRequest,
             HybridTimestamp propagatedTime,
-            StoredIntent foreignIntent
+            StoredIntent intentFromOtherTransaction
     ) {
         String correlationId = idGen.generateCorrelationId("get-status");
         waitingList.add(correlationId, new com.tickloom.messaging.RequestCallback<>() {
@@ -372,7 +380,8 @@ public class TransactionalStorageReplica extends Replica {
                     return;
                 }
 
-                handleForeignIntentStatus(clientMessage, readRequest, propagatedTime, foreignIntent, statusResponse);
+                handleIntentFromOtherTransactionStatus(
+                        clientMessage, readRequest, propagatedTime, intentFromOtherTransaction, statusResponse);
             }
 
             @Override
@@ -382,18 +391,19 @@ public class TransactionalStorageReplica extends Replica {
         });
 
         send(createMessage(
-                coordinatorFor(foreignIntent.intentRecord().txnId()),
+                coordinatorFor(intentFromOtherTransaction.intentRecord().txnId()),
                 correlationId,
-                new GetTransactionStatusRequest(foreignIntent.intentRecord().txnId(), hybridClock.now()),
+                new GetTransactionStatusRequest(
+                        intentFromOtherTransaction.intentRecord().txnId(), hybridClock.now()),
                 TransactionalMessageTypes.GET_TRANSACTION_STATUS_REQUEST
         ));
     }
 
-    private void handleForeignIntentStatus(
+    private void handleIntentFromOtherTransactionStatus(
             Message clientMessage,
             TxnWriteRequest writeRequest,
             HybridTimestamp intentTimestamp,
-            StoredIntent foreignIntent,
+            StoredIntent intentFromOtherTransaction,
             GetTransactionStatusResponse statusResponse
     ) {
         switch (statusResponse.status()) {
@@ -403,26 +413,27 @@ public class TransactionalStorageReplica extends Replica {
                     sendWriteFailure(clientMessage, "Committed transaction is missing commit timestamp");
                     return;
                 }
-                resolveCommittedIntent(writeRequest.key(), foreignIntent, statusResponse.commitTimestamp());
+                resolveCommittedIntent(
+                        writeRequest.key(), intentFromOtherTransaction, statusResponse.commitTimestamp());
                 sendWriteResponse(clientMessage, writeIntent(writeRequest, intentTimestamp));
             }
             case ABORTED -> {
-                intentStore.delete(foreignIntent.key());
+                intentStore.delete(intentFromOtherTransaction.key());
                 sendWriteResponse(clientMessage, writeIntent(writeRequest, intentTimestamp));
             }
         }
     }
 
-    private void handleForeignIntentStatus(
+    private void handleIntentFromOtherTransactionStatus(
             Message clientMessage,
             TxnReadRequest readRequest,
             HybridTimestamp propagatedTime,
-            StoredIntent foreignIntent,
+            StoredIntent intentFromOtherTransaction,
             GetTransactionStatusResponse statusResponse
     ) {
         switch (statusResponse.status()) {
             case PENDING -> {
-                // It is safe to ignore a pending foreign intent for this snapshot read. HLC
+                // It is safe to ignore a pending intent from another transaction for this snapshot read. HLC
                 // propagation ensures the coordinator observes a timestamp at least as high as
                 // this read request, so if the transaction eventually commits, its commit
                 // timestamp will be pushed above this read's snapshot timestamp.
@@ -433,19 +444,27 @@ public class TransactionalStorageReplica extends Replica {
                     sendReadFailure(clientMessage, "Committed transaction is missing commit timestamp");
                     return;
                 }
-                resolveCommittedIntent(readRequest.key(), foreignIntent, statusResponse.commitTimestamp());
+                resolveCommittedIntent(
+                        readRequest.key(), intentFromOtherTransaction, statusResponse.commitTimestamp());
                 sendReadResponse(clientMessage, readCommitted(readRequest, propagatedTime));
             }
             case ABORTED -> {
-                intentStore.delete(foreignIntent.key());
+                intentStore.delete(intentFromOtherTransaction.key());
                 sendReadResponse(clientMessage, readCommitted(readRequest, propagatedTime));
             }
         }
     }
 
-    private void resolveCommittedIntent(String key, StoredIntent foreignIntent, HybridTimestamp commitTimestamp) {
-        committedStore.put(versionedKey(key, commitTimestamp), encodeCommittedValue(foreignIntent));
-        intentStore.delete(foreignIntent.key());
+    private void resolveCommittedIntent(
+            String key,
+            StoredIntent intentFromOtherTransaction,
+            HybridTimestamp commitTimestamp
+    ) {
+        committedStore.put(
+                versionedKey(key, commitTimestamp),
+                encodeCommittedValue(intentFromOtherTransaction)
+        );
+        intentStore.delete(intentFromOtherTransaction.key());
     }
 
     private MVCCKey intentKey(String key, HybridTimestamp intentTimestamp) {
@@ -461,11 +480,11 @@ public class TransactionalStorageReplica extends Replica {
         return storedIntent.map(intent -> intent.intentRecord().value());
     }
 
-    private Optional<StoredIntent> findLatestForeignIntent(TxnWriteRequest request) {
-        return findLatestForeignIntent(request.key(), request.txnId());
+    private Optional<StoredIntent> findLatestIntentFromOtherTransaction(TxnWriteRequest request) {
+        return findLatestIntentFromOtherTransaction(request.key(), request.txnId());
     }
 
-    private Optional<StoredIntent> findLatestForeignIntent(String key, TxnId txnId) {
+    private Optional<StoredIntent> findLatestIntentFromOtherTransaction(String key, TxnId txnId) {
         Optional<StoredIntent> latestIntent = findLatestIntent(key);
         if (latestIntent.isEmpty()) {
             return Optional.empty();
