@@ -300,12 +300,15 @@ public class TransactionalStorageReplica extends Replica {
                 request.participantWrites(),
                 commitTimestamp
         );
+
+        //Send the commit response to the client.
         sendCommitResponse(
                 message,
                 new CommitTransactionResponse(true, commitTimestamp, commitTimestamp, null)
         );
     }
 
+    //we
     private void sendResolveRequests(
             TxnId txnId,
             List<ParticipantWrites> participantWrites,
@@ -327,6 +330,12 @@ public class TransactionalStorageReplica extends Replica {
         }
     }
 
+    // A write encountering an intent from another transaction cannot decide locally whether that
+    // intent still blocks progress. We ask the coordinator that owns the other transaction for its
+    // status and then continue in the callback:
+    // - PENDING: fail this write as a conflict
+    // - COMMITTED: resolve the lingering intent into committed storage, then continue the write
+    // - ABORTED: remove the stale intent, then continue the write
     private void checkAndResolveIntents(
             Message clientMessage,
             TxnWriteRequest writeRequest,
@@ -363,6 +372,11 @@ public class TransactionalStorageReplica extends Replica {
         ));
     }
 
+    // Reads follow the same coordinator-status lookup when they encounter an intent from another
+    // transaction. The difference from writes is what happens after resolution:
+    // - PENDING: for snapshot reads, ignore the pending intent and read committed data
+    // - COMMITTED: resolve the intent and then read committed data
+    // - ABORTED: delete the stale intent and then read committed data
     private void checkAndResolveIntents(
             Message clientMessage,
             TxnReadRequest readRequest,
