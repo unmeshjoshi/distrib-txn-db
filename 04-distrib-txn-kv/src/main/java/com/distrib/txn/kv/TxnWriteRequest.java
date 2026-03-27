@@ -6,5 +6,6 @@ public record TxnWriteRequest(
         TxnId txnId,
         String key,
         String value,
+        HybridTimestamp readTimestamp,
         HybridTimestamp clientTime) {
 }

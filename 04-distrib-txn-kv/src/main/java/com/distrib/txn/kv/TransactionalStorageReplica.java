@@ -146,7 +146,7 @@ public class TransactionalStorageReplica extends Replica {
             txnRecords.put(request.txnId(), new TxnRecord(
                     request.txnId(),
                     TxnStatus.PENDING,
-                    null,
+                    propagatedTime,
                     null,
                     new HashSet<>(),
                     startedTimeout(request.txnId()),

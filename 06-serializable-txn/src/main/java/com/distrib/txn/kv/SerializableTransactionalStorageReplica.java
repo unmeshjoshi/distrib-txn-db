@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * Tickloom's Replica is used here as a convenient cluster-aware process abstraction. In this
@@ -179,7 +180,7 @@ public class SerializableTransactionalStorageReplica extends Replica {
             txnRecords.put(request.txnId(), new TxnRecord(
                     request.txnId(),
                     TxnStatus.PENDING,
-                    null,
+                    propagatedTime,
                     null,
                     new HashSet<>(),
                     startedTimeout(request.txnId()),
@@ -209,18 +210,28 @@ public class SerializableTransactionalStorageReplica extends Replica {
                 findLatestIntentFromOtherTransaction(request.key(), request.txnId());
         if (intentFromOtherTransaction.isPresent()) {
             checkIntentFromOtherTransactionStatus(
-                    message, request, intentTimestamp, intentFromOtherTransaction.get());
+                    message, request, intentTimestamp, request.readTimestamp(), intentFromOtherTransaction.get());
             return;
         }
 
-        completeWrite(message, request, intentTimestamp);
+        completeWrite(message, request, intentTimestamp, request.readTimestamp());
     }
 
     private void completeWrite(
             Message message,
             TxnWriteRequest request,
-            HybridTimestamp intentTimestamp
+            HybridTimestamp intentTimestamp,
+            HybridTimestamp readTimestamp
     ) {
+        if (hasCommittedVersionAfter(request.key(), readTimestamp)) {
+            sendResponse(
+                    message,
+                    new TxnWriteResponse(false, hybridClock.now(), "Conflicting committed transaction"),
+                    TransactionalMessageTypes.TXN_WRITE_RESPONSE
+            );
+            return;
+        }
+
         Optional<TxnId> conflictingTxn = conflictingPendingReadTxn(request.key(), request.txnId());
         if (conflictingTxn.isPresent() && losesTieBreak(request.txnId(), conflictingTxn.get())) {
             sendResponse(
@@ -322,44 +333,20 @@ public class SerializableTransactionalStorageReplica extends Replica {
             Message clientMessage,
             TxnWriteRequest writeRequest,
             HybridTimestamp intentTimestamp,
+            HybridTimestamp readTimestamp,
             StoredIntent intentFromOtherTransaction
     ) {
-        String correlationId = idGen.generateCorrelationId("get-status");
-        waitingList.add(correlationId, new com.tickloom.messaging.RequestCallback<>() {
-            @Override
-            public void onResponse(Object response, ProcessId fromNode) {
-                GetTransactionStatusResponse statusResponse = (GetTransactionStatusResponse) response;
-                mergeClock(statusResponse.propagatedTime());
-                if (statusResponse.error() != null) {
-                    sendResponse(
-                            clientMessage,
-                            new TxnWriteResponse(false, hybridClock.now(), statusResponse.error()),
-                            TransactionalMessageTypes.TXN_WRITE_RESPONSE
-                    );
-                    return;
-                }
-
-                handleIntentFromOtherTransactionStatus(
-                        clientMessage, writeRequest, intentTimestamp, intentFromOtherTransaction, statusResponse);
-            }
-
-            @Override
-            public void onError(Exception error) {
-                sendResponse(
+        requestTransactionStatus(
+                intentFromOtherTransaction.intentRecord().txnId(),
+                statusResponse -> handleIntentFromOtherTransactionStatus(
+                        clientMessage, writeRequest, intentTimestamp, readTimestamp,
+                        intentFromOtherTransaction, statusResponse),
+                error -> sendResponse(
                         clientMessage,
                         new TxnWriteResponse(false, hybridClock.now(), error.getMessage()),
                         TransactionalMessageTypes.TXN_WRITE_RESPONSE
-                );
-            }
-        });
-
-        send(createMessage(
-                coordinatorFor(intentFromOtherTransaction.intentRecord().txnId()),
-                correlationId,
-                new GetTransactionStatusRequest(
-                        intentFromOtherTransaction.intentRecord().txnId(), hybridClock.now()),
-                TransactionalMessageTypes.GET_TRANSACTION_STATUS_REQUEST
-        ));
+                )
+        );
     }
 
     private void checkIntentFromOtherTransactionStatus(
@@ -410,6 +397,7 @@ public class SerializableTransactionalStorageReplica extends Replica {
             Message clientMessage,
             TxnWriteRequest writeRequest,
             HybridTimestamp intentTimestamp,
+            HybridTimestamp readTimestamp,
             StoredIntent intentFromOtherTransaction,
             GetTransactionStatusResponse statusResponse
     ) {
@@ -431,11 +419,11 @@ public class SerializableTransactionalStorageReplica extends Replica {
                 }
                 resolveCommittedIntent(
                         writeRequest.key(), intentFromOtherTransaction, statusResponse.commitTimestamp());
-                completeWrite(clientMessage, writeRequest, intentTimestamp);
+                completeWrite(clientMessage, writeRequest, intentTimestamp, readTimestamp);
             }
             case ABORTED -> {
                 intentStore.delete(intentFromOtherTransaction.key());
-                completeWrite(clientMessage, writeRequest, intentTimestamp);
+                completeWrite(clientMessage, writeRequest, intentTimestamp, readTimestamp);
             }
         }
     }
@@ -590,6 +578,46 @@ public class SerializableTransactionalStorageReplica extends Replica {
                 propagatedTime,
                 null
         );
+    }
+
+    private boolean hasCommittedVersionAfter(String key, HybridTimestamp readTimestamp) {
+        Map<HybridTimestamp, byte[]> committedVersions =
+                committedStore.getVersionsUpTo(encodeLogicalKey(key), MAX_TIMESTAMP);
+
+        for (HybridTimestamp committedTimestamp : committedVersions.keySet()) {
+            if (committedTimestamp.compareTo(readTimestamp) > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void requestTransactionStatus(
+            TxnId txnId,
+            Consumer<GetTransactionStatusResponse> onSuccess,
+            Consumer<Exception> onError
+    ) {
+        String correlationId = idGen.generateCorrelationId("get-status");
+        waitingList.add(correlationId, new com.tickloom.messaging.RequestCallback<>() {
+            @Override
+            public void onResponse(Object response, ProcessId fromNode) {
+                GetTransactionStatusResponse statusResponse = (GetTransactionStatusResponse) response;
+                mergeClock(statusResponse.propagatedTime());
+                onSuccess.accept(statusResponse);
+            }
+
+            @Override
+            public void onError(Exception error) {
+                onError.accept(error);
+            }
+        });
+
+        send(createMessage(
+                coordinatorFor(txnId),
+                correlationId,
+                new GetTransactionStatusRequest(txnId, hybridClock.now()),
+                TransactionalMessageTypes.GET_TRANSACTION_STATUS_REQUEST
+        ));
     }
 
     private Optional<StoredIntent> findStoredIntent(String key, TxnId txnId) {

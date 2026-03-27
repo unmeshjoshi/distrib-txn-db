@@ -49,8 +49,18 @@ public class TransactionalStorageClient extends ClusterClient {
     }
 
     public ListenableFuture<TxnWriteResponse> write(TxnId txnId, String key, String value) {
+        return write(txnId, key, value, transactionStartTimeFor(txnId), hybridClock.now());
+    }
+
+    protected ListenableFuture<TxnWriteResponse> write(
+            TxnId txnId,
+            String key,
+            String value,
+            HybridTimestamp readTimestamp,
+            HybridTimestamp clientTime
+    ) {
         ListenableFuture<TxnWriteResponse> future = sendRequest(
-                new TxnWriteRequest(txnId, key, value, hybridClock.now()),
+                new TxnWriteRequest(txnId, key, value, readTimestamp, clientTime),
                 replicaFor(key),
                 TransactionalMessageTypes.TXN_WRITE_REQUEST
         );
