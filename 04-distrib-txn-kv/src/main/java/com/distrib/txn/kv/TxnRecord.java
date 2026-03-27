@@ -2,6 +2,7 @@ package com.distrib.txn.kv;
 
 import clock.HybridTimestamp;
 import com.tickloom.ProcessId;
+import com.tickloom.util.Timeout;
 
 import java.util.Set;
 
@@ -11,6 +12,6 @@ public record TxnRecord(
         HybridTimestamp readTimestamp,
         HybridTimestamp commitTimestamp,
         Set<ProcessId> participantReplicas,
-        HybridTimestamp lastHeartbeat,
+        Timeout heartbeatTimeout,
         IsolationLevel isolationLevel) {
 }

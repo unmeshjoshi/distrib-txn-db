@@ -4,6 +4,7 @@ import clock.HybridTimestamp;
 import com.tickloom.ProcessId;
 import com.tickloom.future.ListenableFuture;
 import com.tickloom.testkit.Cluster;
+import com.tickloom.util.Timeout;
 import kv.InMemoryMVCCStore;
 import kv.MVCCKey;
 import kv.MVCCStore;
@@ -61,7 +62,8 @@ class TransactionalStorageReplicaClusterTest {
             assertNotNull(txnRecord);
             assertEquals(TxnStatus.PENDING, txnRecord.status());
             assertEquals(IsolationLevel.SNAPSHOT, txnRecord.isolationLevel());
-            assertEquals(response.propagatedTime(), txnRecord.lastHeartbeat());
+            assertTrue(txnRecord.heartbeatTimeout().isTicking());
+            assertEquals(10000, txnRecord.heartbeatTimeout().getDurationTicks());
             assertTrue(txnRecord.participantReplicas().isEmpty());
         }
     }
@@ -195,7 +197,7 @@ class TransactionalStorageReplicaClusterTest {
                     ts(1000),
                     null,
                     Set.of(STORAGE_NODE_1),
-                    ts(1100),
+                    startedTimeout(pendingTxn),
                     IsolationLevel.SNAPSHOT
             ));
             replica.intentStore().put(
@@ -243,7 +245,7 @@ class TransactionalStorageReplicaClusterTest {
                     ts(1000),
                     commitTimestamp,
                     Set.of(STORAGE_NODE_1),
-                    commitTimestamp,
+                    startedTimeout(committedTxn),
                     IsolationLevel.SNAPSHOT
             ));
             replica.intentStore().put(
@@ -363,7 +365,7 @@ class TransactionalStorageReplicaClusterTest {
                     ts(1000),
                     foreignCommitTimestamp,
                     Set.of(STORAGE_NODE_1),
-                    foreignCommitTimestamp,
+                    startedTimeout(committedTxn),
                     IsolationLevel.SNAPSHOT
             ));
             replica.intentStore().put(
@@ -480,6 +482,12 @@ class TransactionalStorageReplicaClusterTest {
 
     private static byte[] encodeIntentRecord(IntentRecord intentRecord) throws Exception {
         return OBJECT_MAPPER.writeValueAsBytes(intentRecord);
+    }
+
+    private static Timeout startedTimeout(TxnId txnId) {
+        Timeout timeout = new Timeout("txn-" + txnId, 10000);
+        timeout.start();
+        return timeout;
     }
 
     private RoutingScenario routingScenario(TransactionalStorageClient client) {

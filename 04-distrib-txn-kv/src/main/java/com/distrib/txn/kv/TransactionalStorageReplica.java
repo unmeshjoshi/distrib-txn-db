@@ -7,6 +7,7 @@ import com.tickloom.ProcessParams;
 import com.tickloom.Replica;
 import com.tickloom.messaging.Message;
 import com.tickloom.messaging.MessageType;
+import com.tickloom.util.Timeout;
 import kv.MVCCKey;
 import kv.MVCCStore;
 import kv.OrderPreservingCodec;
@@ -25,6 +26,9 @@ public class TransactionalStorageReplica extends Replica {
     private final List<ProcessId> canonicalReplicas;
     private final MVCCStore committedStore;
     private final MVCCStore intentStore;
+    // Coordinator-owned transaction records are kept in memory in this module. Each record
+    // carries a tick-based timeout, similar to Tickloom's request timeouts, so abandoned
+    // transactions can be evicted locally after enough ticks pass.
     private final Map<TxnId, TxnRecord> txnRecords;
     private final HybridClock hybridClock;
 
@@ -56,6 +60,12 @@ public class TransactionalStorageReplica extends Replica {
 
     HybridClock hybridClock() {
         return hybridClock;
+    }
+
+    @Override
+    protected void onTick() {
+        txnRecords.values().forEach(txnRecord -> txnRecord.heartbeatTimeout().tick());
+        txnRecords.entrySet().removeIf(entry -> entry.getValue().heartbeatTimeout().fired());
     }
 
     @Override
@@ -128,7 +138,7 @@ public class TransactionalStorageReplica extends Replica {
                     null,
                     null,
                     new HashSet<>(),
-                    propagatedTime,
+                    startedTimeout(request.txnId()),
                     request.isolationLevel()
             ));
             return new BeginTransactionResponse(true, propagatedTime, null);
@@ -233,7 +243,7 @@ public class TransactionalStorageReplica extends Replica {
                 txnRecord.readTimestamp(),
                 commitTimestamp,
                 participantReplicas,
-                commitTimestamp,
+                txnRecord.heartbeatTimeout(),
                 txnRecord.isolationLevel()
         ));
 
@@ -518,6 +528,12 @@ public class TransactionalStorageReplica extends Replica {
 
     private ProcessId coordinatorFor(TxnId txnId) {
         return ReplicaRouting.coordinatorFor(txnId, canonicalReplicas);
+    }
+
+    private Timeout startedTimeout(TxnId txnId) {
+        Timeout timeout = new Timeout("txn-" + txnId, timeoutTicks);
+        timeout.start();
+        return timeout;
     }
 
     private byte[] encodeCommittedValue(StoredIntent storedIntent) {
