@@ -45,19 +45,55 @@ public class HybridClock {
     }
 
     public HybridTimestamp tick(HybridTimestamp requestTime) {
-        long currentTimeMillis = clock.now();
-        long maxTime = Math.max(currentTimeMillis, Math.max(latestTime.getWallClockTime(), requestTime.getWallClockTime()));
+        long currentWallClockTime = clock.now();
+        long mergedWallClockTime = mergedWallClockTime(currentWallClockTime, requestTime);
+        int mergedTicks = mergedTicks(mergedWallClockTime, requestTime);
 
-        int ticks = 0;
-        if (maxTime == latestTime.getWallClockTime() && maxTime == requestTime.getWallClockTime()) {
-            ticks = Math.max(latestTime.getTicks(), requestTime.getTicks()) + 1;
-        } else if (maxTime == latestTime.getWallClockTime()) {
-            ticks = latestTime.getTicks() + 1;
-        } else if (maxTime == requestTime.getWallClockTime()) {
-            ticks = requestTime.getTicks() + 1;
-        }
-
-        latestTime = new HybridTimestamp(maxTime, ticks);
+        latestTime = new HybridTimestamp(mergedWallClockTime, mergedTicks);
         return latestTime;
     }
+
+    private long mergedWallClockTime(long currentWallClockTime, HybridTimestamp requestTime) {
+        return Math.max(
+                currentWallClockTime,
+                Math.max(latestTime.getWallClockTime(), requestTime.getWallClockTime())
+        );
+    }
+
+    /**
+     * Chooses the next logical tick once the merged wall-clock time is known.
+     *
+     * Example:
+     * - latestTime  = (1000, 2)
+     * - requestTime = (1000, 5)
+     * - merged time = 1000
+     *
+     * Since both timestamps share the winning wall-clock time, the larger logical tick wins and
+     * we return 6.
+     *
+     * If physical time wins, the logical tick resets to 0. For example:
+     * - latestTime  = (1000, 2)
+     * - requestTime = (999, 9)
+     * - currentWallClockTime = clock.now() = 1005
+     * - merged time = 1005
+     *
+     * In that case neither the local nor request timestamp supplied the winning wall-clock time,
+     * so we start a new logical sequence at 0.
+     */
+    private int mergedTicks(long mergedWallClockTime, HybridTimestamp requestTime) {
+        long latestWallClockTime = latestTime.getWallClockTime();
+        long requestWallClockTime = requestTime.getWallClockTime();
+
+        if (mergedWallClockTime == latestWallClockTime && mergedWallClockTime == requestWallClockTime) {
+            return Math.max(latestTime.getTicks(), requestTime.getTicks()) + 1;
+        }
+        if (mergedWallClockTime == latestWallClockTime) {
+            return latestTime.getTicks() + 1;
+        }
+        if (mergedWallClockTime == requestWallClockTime) {
+            return requestTime.getTicks() + 1;
+        }
+        return 0;
+    }
+
 }
