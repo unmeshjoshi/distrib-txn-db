@@ -80,7 +80,7 @@ class SerializableWriteSkewTest {
 
             CommitTransactionResponse txn1Commit = await(cluster, client1.commit(txn1, ts(1200)));
             assertTrue(txn1Commit.success());
-    
+
             SerializableTransactionalStorageReplica replica =
                     (SerializableTransactionalStorageReplica) cluster.getProcess(STORAGE_NODE);
 
