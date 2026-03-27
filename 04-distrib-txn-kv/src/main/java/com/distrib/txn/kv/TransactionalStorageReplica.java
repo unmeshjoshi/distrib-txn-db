@@ -19,17 +19,27 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+/**
+ * Tickloom's Replica is used here as a convenient cluster-aware process abstraction. In this
+ * workshop, a TransactionalStorageReplica represents one node in the cluster, not one of multiple
+ * replicas of the same shard/data for replication.
+ */
 public class TransactionalStorageReplica extends Replica {
     private static final HybridTimestamp MAX_TIMESTAMP =
             new HybridTimestamp(Long.MAX_VALUE, Integer.MAX_VALUE);
 
-    private final List<ProcessId> canonicalReplicas;
+    //all other TransactionalStorageReplica nodes.
+    private final List<ProcessId> allNodes;
+
     private final MVCCStore committedStore;
     private final MVCCStore intentStore;
-    // Coordinator-owned transaction records are kept in memory in this module. Each record
+
+    // The following state is only owned on the node that plays the
+    // Coordinator role. Transaction records are kept in memory in this module. Each record
     // carries a tick-based timeout, similar to Tickloom's request timeouts, so abandoned
     // transactions can be evicted locally after enough ticks pass.
     private final Map<TxnId, TxnRecord> txnRecords;
+
     private final HybridClock hybridClock;
 
     public TransactionalStorageReplica(
@@ -39,7 +49,7 @@ public class TransactionalStorageReplica extends Replica {
             ProcessParams processParams
     ) {
         super(peerIds, processParams);
-        this.canonicalReplicas = ReplicaRouting.canonicalReplicaOrder(getAllNodes());
+        this.allNodes = ReplicaRouting.canonicalReplicaOrder(getAllNodes());
         this.committedStore = committedStore;
         this.intentStore = intentStore;
         this.txnRecords = new HashMap<>();
@@ -91,6 +101,7 @@ public class TransactionalStorageReplica extends Replica {
     private void handleTxnWriteRequest(Message message) {
         TxnWriteRequest request = deserializePayload(message.payload(), TxnWriteRequest.class);
         HybridTimestamp propagatedTime = mergeClock(request.clientTime());
+
         beginWriteIntent(message, request, propagatedTime);
     }
 
@@ -147,9 +158,15 @@ public class TransactionalStorageReplica extends Replica {
         }
     }
 
+    /**
+     * Add a provisional record for the write request.
+     * @param request
+     * @param intentTimestamp
+     * @return
+     */
     private TxnWriteResponse writeIntent(TxnWriteRequest request, HybridTimestamp intentTimestamp) {
         try {
-            storeIntent(request, intentTimestamp);
+            intentStore.put(intentKey(request.key(), intentTimestamp), encodeIntentRecord(request));
             return new TxnWriteResponse(true, intentTimestamp, null);
         } catch (Exception e) {
             return new TxnWriteResponse(false, hybridClock.now(), e.getMessage());
@@ -163,8 +180,8 @@ public class TransactionalStorageReplica extends Replica {
     ) {
         try {
             // Transactional reads in this module mean "read from the transaction's snapshot,
-            // plus this transaction's own writes." That is why we first check for an intent
-            // owned by the same transaction without comparing its intent timestamp to the read
+            // plus this transaction's own writes." That is why we first check for an
+            // intent/provisional record owned by the same transaction without comparing its intent timestamp to the read
             // timestamp carried on the request.
             //
             // This is intentionally different from a true historical "read at timestamp T"
@@ -219,6 +236,17 @@ public class TransactionalStorageReplica extends Replica {
         return hybridClock.tick(remoteTimestamp);
     }
 
+    /**
+     * We write provisional record. First check if there are any pending provisional records
+     * for the same key.
+     *  If there are, check the status talking to the transaction coordinator.
+     *  If their transaction is commited, then resolve those moving writes to commited store.
+     *  If their transaction is still pending, then consider that as a conflict.
+     * If there are no pending provisional records, then write provisional record the write request.
+     * @param message
+     * @param request
+     * @param intentTimestamp
+     */
     private void beginWriteIntent(
             Message message,
             TxnWriteRequest request,
@@ -226,7 +254,8 @@ public class TransactionalStorageReplica extends Replica {
     ) {
         Optional<StoredIntent> foreignIntent = findLatestForeignIntent(request);
         if (foreignIntent.isEmpty()) {
-            sendResponse(message, writeIntent(request, intentTimestamp), TransactionalMessageTypes.TXN_WRITE_RESPONSE);
+            TxnWriteResponse response = writeIntent(request, intentTimestamp);
+            sendResponse(message, response, TransactionalMessageTypes.TXN_WRITE_RESPONSE);
             return;
         }
 
@@ -290,10 +319,6 @@ public class TransactionalStorageReplica extends Replica {
                     TransactionalMessageTypes.RESOLVE_TRANSACTION_REQUEST
             ));
         }
-    }
-
-    private void storeIntent(TxnWriteRequest request, HybridTimestamp intentTimestamp) {
-        intentStore.put(intentKey(request.key(), intentTimestamp), encodeIntentRecord(request));
     }
 
     private void checkForeignIntentStatus(
@@ -540,7 +565,7 @@ public class TransactionalStorageReplica extends Replica {
     }
 
     private ProcessId coordinatorFor(TxnId txnId) {
-        return ReplicaRouting.coordinatorFor(txnId, canonicalReplicas);
+        return ReplicaRouting.coordinatorFor(txnId, allNodes);
     }
 
     private Timeout startedTimeout(TxnId txnId) {

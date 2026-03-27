@@ -20,6 +20,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+/**
+ * Tickloom's Replica is used here as a convenient cluster-aware process abstraction. In this
+ * workshop, a SerializableTransactionalStorageReplica represents one node in the cluster, not one
+ * of multiple replicas of the same shard/data for replication.
+ */
 public class SerializableTransactionalStorageReplica extends Replica {
     private static final HybridTimestamp MAX_TIMESTAMP =
             new HybridTimestamp(Long.MAX_VALUE, Integer.MAX_VALUE);

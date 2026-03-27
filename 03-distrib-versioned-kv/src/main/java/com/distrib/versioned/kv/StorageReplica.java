@@ -15,6 +15,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+/**
+ * Tickloom's Replica is used here as a convenient cluster-aware process abstraction. In this
+ * workshop, a StorageReplica represents one node in the cluster, not one of multiple replicas of
+ * the same shard/data for replication.
+ */
 public class StorageReplica extends Replica {
     private final MVCCStore store;
     private final HybridClock hybridClock;
