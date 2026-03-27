@@ -168,6 +168,108 @@ class TransactionalStorageReplicaClusterTest {
     }
 
     @Test
+    void txnReadIgnoresForeignPendingIntentAndReturnsCommittedValue() throws Exception {
+        try (Cluster cluster = new Cluster()
+                .withProcessIds(List.of(STORAGE_NODE_1))
+                .useSimulatedNetwork()
+                .build((peerIds, params) -> {
+                    InMemoryMVCCStore committedStore = new InMemoryMVCCStore();
+                    committedStore.put(versionedKey("account-101", ts(900)), encodeValue("750"));
+                    return new TransactionalStorageReplica(
+                            committedStore,
+                            new InMemoryMVCCStore(),
+                            peerIds,
+                            params
+                    );
+                })
+                .start()) {
+
+            TransactionalStorageClient client = cluster.newClient(CLIENT, TransactionalStorageClient::new);
+            TransactionalStorageReplica replica =
+                    (TransactionalStorageReplica) cluster.getProcess(STORAGE_NODE_1);
+
+            TxnId pendingTxn = TxnId.of("txn-read-pending");
+            replica.txnRecords().put(pendingTxn, new TxnRecord(
+                    pendingTxn,
+                    TxnStatus.PENDING,
+                    ts(1000),
+                    null,
+                    Set.of(STORAGE_NODE_1),
+                    ts(1100),
+                    IsolationLevel.SNAPSHOT
+            ));
+            replica.intentStore().put(
+                    versionedKey("account-101", ts(1100)),
+                    encodeIntentRecord(new IntentRecord(pendingTxn, "1000"))
+            );
+
+            TxnId readerTxn = TxnId.of("txn-read-visible");
+            await(cluster, client.beginTransaction(readerTxn, IsolationLevel.SNAPSHOT, ts(1000)));
+
+            TxnReadResponse readResponse = await(
+                    cluster,
+                    client.read(readerTxn, "account-101", ts(1000), ts(1200))
+            );
+
+            assertTrue(readResponse.found());
+            assertEquals("750", readResponse.value());
+            assertTrue(intentExists(replica.intentStore(), "account-101", ts(5000)));
+        }
+    }
+
+    @Test
+    void txnReadResolvesCommittedForeignIntentBeforeReturningValue() throws Exception {
+        try (Cluster cluster = new Cluster()
+                .withProcessIds(List.of(STORAGE_NODE_1))
+                .useSimulatedNetwork()
+                .build((peerIds, params) -> new TransactionalStorageReplica(
+                        new InMemoryMVCCStore(),
+                        new InMemoryMVCCStore(),
+                        peerIds,
+                        params))
+                .start()) {
+
+            TransactionalStorageClient client = cluster.newClient(CLIENT, TransactionalStorageClient::new);
+            TransactionalStorageReplica replica =
+                    (TransactionalStorageReplica) cluster.getProcess(STORAGE_NODE_1);
+
+            TxnId committedTxn = TxnId.of("txn-read-committed");
+            HybridTimestamp intentTimestamp = ts(1100);
+            HybridTimestamp commitTimestamp = ts(1200);
+
+            replica.txnRecords().put(committedTxn, new TxnRecord(
+                    committedTxn,
+                    TxnStatus.COMMITTED,
+                    ts(1000),
+                    commitTimestamp,
+                    Set.of(STORAGE_NODE_1),
+                    commitTimestamp,
+                    IsolationLevel.SNAPSHOT
+            ));
+            replica.intentStore().put(
+                    versionedKey("account-101", intentTimestamp),
+                    encodeIntentRecord(new IntentRecord(committedTxn, "1000"))
+            );
+
+            TxnId readerTxn = TxnId.of("txn-read-after-commit");
+            await(cluster, client.beginTransaction(readerTxn, IsolationLevel.SNAPSHOT, ts(1300)));
+
+            TxnReadResponse readResponse = await(
+                    cluster,
+                    client.read(readerTxn, "account-101", ts(1300), ts(1400))
+            );
+
+            assertTrue(readResponse.found());
+            assertEquals("1000", readResponse.value());
+            assertEquals(
+                    Optional.of("1000"),
+                    committedValue(replica.committedStore(), "account-101", ts(5000))
+            );
+            assertFalse(intentExists(replica.intentStore(), "account-101", ts(5000)));
+        }
+    }
+
+    @Test
     void commitMovesIntentToCommittedStoreAndMarksTransactionCommitted() throws Exception {
         try (Cluster cluster = new Cluster()
                 .withProcessIds(List.of(STORAGE_NODE_1))
