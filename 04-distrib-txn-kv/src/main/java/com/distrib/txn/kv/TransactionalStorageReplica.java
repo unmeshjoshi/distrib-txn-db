@@ -493,7 +493,7 @@ public class TransactionalStorageReplica extends Replica {
                 .map(OrderPreservingCodec::decodeString);
     }
 
-    private TxnReadResponse readCommitted(TxnReadRequest request, HybridTimestamp propagatedTime) {
+    protected TxnReadResponse readCommitted(TxnReadRequest request, HybridTimestamp propagatedTime) {
         Optional<String> committedValue = readCommittedValue(request);
         if (committedValue.isPresent()) {
             return new TxnReadResponse(committedValue.get(), true, propagatedTime, null);
