@@ -18,7 +18,7 @@ public class ClockUncertaintyTransactionalStorageClient extends TransactionalSto
     }
 
     @Override
-    public ListenableFuture<TxnReadResponse> read(
+    protected ListenableFuture<TxnReadResponse> read(
             TxnId txnId,
             String key,
             HybridTimestamp readTimestamp,
@@ -27,17 +27,6 @@ public class ClockUncertaintyTransactionalStorageClient extends TransactionalSto
         ListenableFuture<TxnReadResponse> result = new ListenableFuture<>();
         readWithRestart(result, txnId, key, effectiveReadTimestamp(txnId, readTimestamp), clientTime);
         return result;
-    }
-
-    @Override
-    public ListenableFuture<TxnWriteResponse> write(
-            TxnId txnId,
-            String key,
-            String value,
-            HybridTimestamp readTimestamp,
-            HybridTimestamp clientTime
-    ) {
-        return super.write(txnId, key, value, effectiveReadTimestamp(txnId, readTimestamp), clientTime);
     }
 
     private void readWithRestart(

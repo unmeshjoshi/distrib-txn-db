@@ -47,37 +47,47 @@ class SnapshotIsolationAnomalyTest {
             TxnId txn2 = TxnId.of("txn-write-skew-2");
             HybridTimestamp snapshotTimestamp = ts(1000);
 
-            await(cluster, client1.beginTransaction(txn1, IsolationLevel.SNAPSHOT, snapshotTimestamp));
-            await(cluster, client2.beginTransaction(txn2, IsolationLevel.SNAPSHOT, snapshotTimestamp));
+            cluster.setTimeForProcess(CLIENT_1, 1000);
+            cluster.setTimeForProcess(CLIENT_2, 1000);
+            await(cluster, client1.beginTransaction(txn1, IsolationLevel.SNAPSHOT));
+            await(cluster, client2.beginTransaction(txn2, IsolationLevel.SNAPSHOT));
 
             // MVCC/versioned values give both transactions a stable snapshot, but snapshot
             // isolation still only protects against write-write conflicts on the same key.
             // These transactions read the same invariant across two keys and then update
             // different keys, so both commits succeed and the invariant can be broken.
+            cluster.setTimeForProcess(CLIENT_1, 1010);
             TxnReadResponse txn1ReadsAlice =
-                    await(cluster, client1.read(txn1, "doctor-alice", snapshotTimestamp, ts(1010)));
+                    await(cluster, client1.read(txn1, "doctor-alice", snapshotTimestamp));
+            cluster.setTimeForProcess(CLIENT_1, 1020);
             TxnReadResponse txn1ReadsBob =
-                    await(cluster, client1.read(txn1, "doctor-bob", snapshotTimestamp, ts(1020)));
+                    await(cluster, client1.read(txn1, "doctor-bob", snapshotTimestamp));
+            cluster.setTimeForProcess(CLIENT_2, 1030);
             TxnReadResponse txn2ReadsAlice =
-                    await(cluster, client2.read(txn2, "doctor-alice", snapshotTimestamp, ts(1030)));
+                    await(cluster, client2.read(txn2, "doctor-alice", snapshotTimestamp));
+            cluster.setTimeForProcess(CLIENT_2, 1040);
             TxnReadResponse txn2ReadsBob =
-                    await(cluster, client2.read(txn2, "doctor-bob", snapshotTimestamp, ts(1040)));
+                    await(cluster, client2.read(txn2, "doctor-bob", snapshotTimestamp));
 
             assertEquals("on-call", txn1ReadsAlice.value());
             assertEquals("on-call", txn1ReadsBob.value());
             assertEquals("on-call", txn2ReadsAlice.value());
             assertEquals("on-call", txn2ReadsBob.value());
 
+            cluster.setTimeForProcess(CLIENT_1, 1100);
             TxnWriteResponse txn1Write =
-                    await(cluster, client1.write(txn1, "doctor-alice", "off-call", snapshotTimestamp, ts(1100)));
+                    await(cluster, client1.write(txn1, "doctor-alice", "off-call"));
+            cluster.setTimeForProcess(CLIENT_2, 1110);
             TxnWriteResponse txn2Write =
-                    await(cluster, client2.write(txn2, "doctor-bob", "off-call", snapshotTimestamp, ts(1110)));
+                    await(cluster, client2.write(txn2, "doctor-bob", "off-call"));
 
             assertTrue(txn1Write.success());
             assertTrue(txn2Write.success());
 
-            CommitTransactionResponse txn1Commit = await(cluster, client1.commit(txn1, ts(1200)));
-            CommitTransactionResponse txn2Commit = await(cluster, client2.commit(txn2, ts(1210)));
+            cluster.setTimeForProcess(CLIENT_1, 1200);
+            cluster.setTimeForProcess(CLIENT_2, 1210);
+            CommitTransactionResponse txn1Commit = await(cluster, client1.commit(txn1));
+            CommitTransactionResponse txn2Commit = await(cluster, client2.commit(txn2));
 
             assertTrue(txn1Commit.success());
             assertTrue(txn2Commit.success());

@@ -48,15 +48,15 @@ class ClockUncertaintyReadRestartTest {
             cluster.setTimeForProcess(READER, 1000);
 
             TxnId writerTxn = TxnId.of("txn-uncertainty-writer");
-            await(cluster, writer.beginTransaction(writerTxn, IsolationLevel.SNAPSHOT, ts(995)));
-            await(cluster, writer.write(writerTxn, "account-101", "1000", ts(995), ts(995)));
-            await(cluster, writer.commit(writerTxn, ts(995)));
+            await(cluster, writer.beginTransaction(writerTxn, IsolationLevel.SNAPSHOT));
+            await(cluster, writer.write(writerTxn, "account-101", "1000"));
+            await(cluster, writer.commit(writerTxn));
 
             TxnId readerTxn = TxnId.of("txn-uncertainty-reader");
-            await(cluster, reader.beginTransaction(readerTxn, IsolationLevel.SNAPSHOT, ts(1000)));
+            await(cluster, reader.beginTransaction(readerTxn, IsolationLevel.SNAPSHOT));
 
             TxnReadResponse readResponse =
-                    await(cluster, reader.read(readerTxn, "account-101", ts(1000), ts(1000)));
+                    await(cluster, reader.read(readerTxn, "account-101", ts(1000)));
 
             assertTrue(readResponse.found());
             assertEquals("1000", readResponse.value());
@@ -103,10 +103,10 @@ class ClockUncertaintyReadRestartTest {
             );
 
             TxnId readerTxn = TxnId.of("txn-uncertainty-reader-after-resolve");
-            await(cluster, reader.beginTransaction(readerTxn, IsolationLevel.SNAPSHOT, ts(1000)));
+            await(cluster, reader.beginTransaction(readerTxn, IsolationLevel.SNAPSHOT));
 
             TxnReadResponse readResponse =
-                    await(cluster, reader.read(readerTxn, "account-101", ts(1000), ts(1000)));
+                    await(cluster, reader.read(readerTxn, "account-101", ts(1000)));
 
             assertTrue(readResponse.found());
             assertEquals("1000", readResponse.value());

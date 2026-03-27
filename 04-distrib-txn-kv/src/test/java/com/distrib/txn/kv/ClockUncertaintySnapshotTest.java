@@ -40,10 +40,10 @@ class ClockUncertaintySnapshotTest {
             cluster.setTimeForProcess(READER, 1000);
 
             TxnId writerTxn = TxnId.of("txn-uncertainty-writer");
-            await(cluster, writer.beginTransaction(writerTxn, IsolationLevel.SNAPSHOT, ts(995)));
-            await(cluster, writer.write(writerTxn, "account-101", "1000", ts(995), ts(995)));
+            await(cluster, writer.beginTransaction(writerTxn, IsolationLevel.SNAPSHOT));
+            await(cluster, writer.write(writerTxn, "account-101", "1000"));
 
-            CommitTransactionResponse commitResponse = await(cluster, writer.commit(writerTxn, ts(995)));
+            CommitTransactionResponse commitResponse = await(cluster, writer.commit(writerTxn));
 
             assertTrue(commitResponse.success());
             assertNotNull(commitResponse.commitTimestamp());
@@ -51,18 +51,18 @@ class ClockUncertaintySnapshotTest {
             assertTrue(commitResponse.commitTimestamp().getWallClockTime() <= 1000 + UNCERTAINTY_OFFSET);
 
             TxnId readerTxn = TxnId.of("txn-uncertainty-reader");
-            await(cluster, reader.beginTransaction(readerTxn, IsolationLevel.SNAPSHOT, ts(1000)));
+            await(cluster, reader.beginTransaction(readerTxn, IsolationLevel.SNAPSHOT));
 
             // This module demonstrates the issue only: the committed version is newer than the
             // snapshot timestamp, so the read misses it even though it lies within the reader's
             // clock-uncertainty window.
             TxnReadResponse uncertainRead =
-                    await(cluster, reader.read(readerTxn, "account-101", ts(1000), ts(1000)));
+                    await(cluster, reader.read(readerTxn, "account-101", ts(1000)));
 
             assertFalse(uncertainRead.found());
 
             TxnReadResponse laterRead =
-                    await(cluster, reader.read(readerTxn, "account-101", ts(1000 + UNCERTAINTY_OFFSET + 1), ts(1000)));
+                    await(cluster, reader.read(readerTxn, "account-101", ts(1000 + UNCERTAINTY_OFFSET + 1)));
 
             assertTrue(laterRead.found());
             assertTrue("1000".equals(laterRead.value()));

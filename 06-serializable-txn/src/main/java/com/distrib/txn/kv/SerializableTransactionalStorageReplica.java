@@ -60,6 +60,14 @@ public class SerializableTransactionalStorageReplica extends Replica {
         return committedStore;
     }
 
+    MVCCStore intentStore() {
+        return intentStore;
+    }
+
+    Map<TxnId, TxnRecord> txnRecords() {
+        return txnRecords;
+    }
+
     @Override
     protected void onTick() {
         txnRecords.values().forEach(txnRecord -> txnRecord.heartbeatTimeout().tick());
@@ -73,7 +81,9 @@ public class SerializableTransactionalStorageReplica extends Replica {
                 TransactionalMessageTypes.TXN_WRITE_REQUEST, this::handleTxnWriteRequest,
                 TransactionalMessageTypes.TXN_READ_REQUEST, this::handleTxnReadRequest,
                 TransactionalMessageTypes.COMMIT_TRANSACTION_REQUEST, this::handleCommitTransactionRequest,
-                TransactionalMessageTypes.RESOLVE_TRANSACTION_REQUEST, this::handleResolveTransactionRequest
+                TransactionalMessageTypes.RESOLVE_TRANSACTION_REQUEST, this::handleResolveTransactionRequest,
+                TransactionalMessageTypes.GET_TRANSACTION_STATUS_REQUEST, this::handleGetTransactionStatusRequest,
+                TransactionalMessageTypes.GET_TRANSACTION_STATUS_RESPONSE, this::handleGetTransactionStatusResponse
         );
     }
 
@@ -87,26 +97,13 @@ public class SerializableTransactionalStorageReplica extends Replica {
     private void handleTxnWriteRequest(Message message) {
         TxnWriteRequest request = deserializePayload(message.payload(), TxnWriteRequest.class);
         HybridTimestamp intentTimestamp = mergeClock(request.clientTime());
-
-        Optional<TxnId> conflictingTxn = conflictingPendingReadTxn(request.key(), request.txnId());
-        if (conflictingTxn.isPresent() && losesTieBreak(request.txnId(), conflictingTxn.get())) {
-            sendResponse(
-                    message,
-                    new TxnWriteResponse(false, hybridClock.now(), "Conflicting serializable read"),
-                    TransactionalMessageTypes.TXN_WRITE_RESPONSE
-            );
-            return;
-        }
-
-        TxnWriteResponse response = writeIntent(request, intentTimestamp);
-        sendResponse(message, response, TransactionalMessageTypes.TXN_WRITE_RESPONSE);
+        beginWriteIntent(message, request, intentTimestamp);
     }
 
     private void handleTxnReadRequest(Message message) {
         TxnReadRequest request = deserializePayload(message.payload(), TxnReadRequest.class);
         HybridTimestamp propagatedTime = mergeClock(request.clientTime());
-        TxnReadResponse response = read(request, propagatedTime);
-        sendResponse(message, response, TransactionalMessageTypes.TXN_READ_RESPONSE);
+        beginRead(message, request, propagatedTime);
     }
 
     private void handleCommitTransactionRequest(Message message) {
@@ -155,6 +152,20 @@ public class SerializableTransactionalStorageReplica extends Replica {
         sendResponse(message, response, TransactionalMessageTypes.RESOLVE_TRANSACTION_RESPONSE);
     }
 
+    private void handleGetTransactionStatusRequest(Message message) {
+        GetTransactionStatusRequest request =
+                deserializePayload(message.payload(), GetTransactionStatusRequest.class);
+        HybridTimestamp propagatedTime = mergeClock(request.clientTime());
+        GetTransactionStatusResponse response = getTransactionStatus(request, propagatedTime);
+        sendResponse(message, response, TransactionalMessageTypes.GET_TRANSACTION_STATUS_RESPONSE);
+    }
+
+    private void handleGetTransactionStatusResponse(Message message) {
+        GetTransactionStatusResponse response =
+                deserializePayload(message.payload(), GetTransactionStatusResponse.class);
+        waitingList.handleResponse(message.correlationId(), response, message.source());
+    }
+
     private BeginTransactionResponse beginTransaction(
             BeginTransactionRequest request,
             HybridTimestamp propagatedTime
@@ -184,26 +195,85 @@ public class SerializableTransactionalStorageReplica extends Replica {
         }
     }
 
-    private TxnReadResponse read(TxnReadRequest request, HybridTimestamp propagatedTime) {
+    private void beginWriteIntent(
+            Message message,
+            TxnWriteRequest request,
+            HybridTimestamp intentTimestamp
+    ) {
+        Optional<StoredIntent> foreignIntent = findLatestForeignIntent(request.key(), request.txnId());
+        if (foreignIntent.isPresent()) {
+            checkForeignIntentStatus(message, request, intentTimestamp, foreignIntent.get());
+            return;
+        }
+
+        completeWrite(message, request, intentTimestamp);
+    }
+
+    private void completeWrite(
+            Message message,
+            TxnWriteRequest request,
+            HybridTimestamp intentTimestamp
+    ) {
+        Optional<TxnId> conflictingTxn = conflictingPendingReadTxn(request.key(), request.txnId());
+        if (conflictingTxn.isPresent() && losesTieBreak(request.txnId(), conflictingTxn.get())) {
+            sendResponse(
+                    message,
+                    new TxnWriteResponse(false, hybridClock.now(), "Conflicting serializable read"),
+                    TransactionalMessageTypes.TXN_WRITE_RESPONSE
+            );
+            return;
+        }
+
+        sendResponse(message, writeIntent(request, intentTimestamp), TransactionalMessageTypes.TXN_WRITE_RESPONSE);
+    }
+
+    private void beginRead(
+            Message message,
+            TxnReadRequest request,
+            HybridTimestamp propagatedTime
+    ) {
         try {
             Optional<String> ownIntentValue = findOwnIntentValue(request.key(), request.txnId());
             if (ownIntentValue.isPresent()) {
-                return new TxnReadResponse(ownIntentValue.get(), true, propagatedTime, null);
+                sendResponse(
+                        message,
+                        new TxnReadResponse(ownIntentValue.get(), true, propagatedTime, null),
+                        TransactionalMessageTypes.TXN_READ_RESPONSE
+                );
+                return;
             }
 
-            Optional<String> committedValue = committedStore
-                    .getAsOf(versionedKey(request.key(), request.readTimestamp()))
-                    .map(OrderPreservingCodec::decodeString);
-
-            recordReadProvisional(request, propagatedTime);
-
-            if (committedValue.isPresent()) {
-                return new TxnReadResponse(committedValue.get(), true, propagatedTime, null);
+            Optional<StoredIntent> foreignIntent = findLatestForeignIntent(request.key(), request.txnId());
+            if (foreignIntent.isPresent()) {
+                checkForeignIntentStatus(message, request, propagatedTime, foreignIntent.get());
+                return;
             }
-            return new TxnReadResponse(null, false, propagatedTime, null);
+
+            sendResponse(message, readCommittedAndRecordProvisional(request, propagatedTime),
+                    TransactionalMessageTypes.TXN_READ_RESPONSE);
         } catch (Exception e) {
-            return new TxnReadResponse(null, false, hybridClock.now(), e.getMessage());
+            sendResponse(
+                    message,
+                    new TxnReadResponse(null, false, hybridClock.now(), e.getMessage()),
+                    TransactionalMessageTypes.TXN_READ_RESPONSE
+            );
         }
+    }
+
+    private TxnReadResponse readCommittedAndRecordProvisional(
+            TxnReadRequest request,
+            HybridTimestamp propagatedTime
+    ) {
+        Optional<String> committedValue = committedStore
+                .getAsOf(versionedKey(request.key(), request.readTimestamp()))
+                .map(OrderPreservingCodec::decodeString);
+
+        recordReadProvisional(request, propagatedTime);
+
+        if (committedValue.isPresent()) {
+            return new TxnReadResponse(committedValue.get(), true, propagatedTime, null);
+        }
+        return new TxnReadResponse(null, false, propagatedTime, null);
     }
 
     private void recordReadProvisional(TxnReadRequest request, HybridTimestamp readMarkerTimestamp) {
@@ -239,6 +309,164 @@ public class SerializableTransactionalStorageReplica extends Replica {
         return Optional.ofNullable(conflictingTxn);
     }
 
+    private void checkForeignIntentStatus(
+            Message clientMessage,
+            TxnWriteRequest writeRequest,
+            HybridTimestamp intentTimestamp,
+            StoredIntent foreignIntent
+    ) {
+        String correlationId = idGen.generateCorrelationId("get-status");
+        waitingList.add(correlationId, new com.tickloom.messaging.RequestCallback<>() {
+            @Override
+            public void onResponse(Object response, ProcessId fromNode) {
+                GetTransactionStatusResponse statusResponse = (GetTransactionStatusResponse) response;
+                mergeClock(statusResponse.propagatedTime());
+                if (statusResponse.error() != null) {
+                    sendResponse(
+                            clientMessage,
+                            new TxnWriteResponse(false, hybridClock.now(), statusResponse.error()),
+                            TransactionalMessageTypes.TXN_WRITE_RESPONSE
+                    );
+                    return;
+                }
+
+                handleForeignIntentStatus(clientMessage, writeRequest, intentTimestamp, foreignIntent, statusResponse);
+            }
+
+            @Override
+            public void onError(Exception error) {
+                sendResponse(
+                        clientMessage,
+                        new TxnWriteResponse(false, hybridClock.now(), error.getMessage()),
+                        TransactionalMessageTypes.TXN_WRITE_RESPONSE
+                );
+            }
+        });
+
+        send(createMessage(
+                coordinatorFor(foreignIntent.intentRecord().txnId()),
+                correlationId,
+                new GetTransactionStatusRequest(foreignIntent.intentRecord().txnId(), hybridClock.now()),
+                TransactionalMessageTypes.GET_TRANSACTION_STATUS_REQUEST
+        ));
+    }
+
+    private void checkForeignIntentStatus(
+            Message clientMessage,
+            TxnReadRequest readRequest,
+            HybridTimestamp propagatedTime,
+            StoredIntent foreignIntent
+    ) {
+        String correlationId = idGen.generateCorrelationId("get-status");
+        waitingList.add(correlationId, new com.tickloom.messaging.RequestCallback<>() {
+            @Override
+            public void onResponse(Object response, ProcessId fromNode) {
+                GetTransactionStatusResponse statusResponse = (GetTransactionStatusResponse) response;
+                mergeClock(statusResponse.propagatedTime());
+                if (statusResponse.error() != null) {
+                    sendResponse(
+                            clientMessage,
+                            new TxnReadResponse(null, false, hybridClock.now(), statusResponse.error()),
+                            TransactionalMessageTypes.TXN_READ_RESPONSE
+                    );
+                    return;
+                }
+
+                handleForeignIntentStatus(clientMessage, readRequest, propagatedTime, foreignIntent, statusResponse);
+            }
+
+            @Override
+            public void onError(Exception error) {
+                sendResponse(
+                        clientMessage,
+                        new TxnReadResponse(null, false, hybridClock.now(), error.getMessage()),
+                        TransactionalMessageTypes.TXN_READ_RESPONSE
+                );
+            }
+        });
+
+        send(createMessage(
+                coordinatorFor(foreignIntent.intentRecord().txnId()),
+                correlationId,
+                new GetTransactionStatusRequest(foreignIntent.intentRecord().txnId(), hybridClock.now()),
+                TransactionalMessageTypes.GET_TRANSACTION_STATUS_REQUEST
+        ));
+    }
+
+    private void handleForeignIntentStatus(
+            Message clientMessage,
+            TxnWriteRequest writeRequest,
+            HybridTimestamp intentTimestamp,
+            StoredIntent foreignIntent,
+            GetTransactionStatusResponse statusResponse
+    ) {
+        switch (statusResponse.status()) {
+            case PENDING -> sendResponse(
+                    clientMessage,
+                    new TxnWriteResponse(false, hybridClock.now(), "Conflicting pending transaction"),
+                    TransactionalMessageTypes.TXN_WRITE_RESPONSE
+            );
+            case COMMITTED -> {
+                if (statusResponse.commitTimestamp() == null) {
+                    sendResponse(
+                            clientMessage,
+                            new TxnWriteResponse(false, hybridClock.now(),
+                                    "Committed transaction is missing commit timestamp"),
+                            TransactionalMessageTypes.TXN_WRITE_RESPONSE
+                    );
+                    return;
+                }
+                resolveCommittedIntent(writeRequest.key(), foreignIntent, statusResponse.commitTimestamp());
+                completeWrite(clientMessage, writeRequest, intentTimestamp);
+            }
+            case ABORTED -> {
+                intentStore.delete(foreignIntent.key());
+                completeWrite(clientMessage, writeRequest, intentTimestamp);
+            }
+        }
+    }
+
+    private void handleForeignIntentStatus(
+            Message clientMessage,
+            TxnReadRequest readRequest,
+            HybridTimestamp propagatedTime,
+            StoredIntent foreignIntent,
+            GetTransactionStatusResponse statusResponse
+    ) {
+        switch (statusResponse.status()) {
+            case PENDING -> sendResponse(
+                    clientMessage,
+                    new TxnReadResponse(null, false, hybridClock.now(), "Conflicting pending transaction"),
+                    TransactionalMessageTypes.TXN_READ_RESPONSE
+            );
+            case COMMITTED -> {
+                if (statusResponse.commitTimestamp() == null) {
+                    sendResponse(
+                            clientMessage,
+                            new TxnReadResponse(null, false, hybridClock.now(),
+                                    "Committed transaction is missing commit timestamp"),
+                            TransactionalMessageTypes.TXN_READ_RESPONSE
+                    );
+                    return;
+                }
+                resolveCommittedIntent(readRequest.key(), foreignIntent, statusResponse.commitTimestamp());
+                sendResponse(
+                        clientMessage,
+                        readCommittedAndRecordProvisional(readRequest, propagatedTime),
+                        TransactionalMessageTypes.TXN_READ_RESPONSE
+                );
+            }
+            case ABORTED -> {
+                intentStore.delete(foreignIntent.key());
+                sendResponse(
+                        clientMessage,
+                        readCommittedAndRecordProvisional(readRequest, propagatedTime),
+                        TransactionalMessageTypes.TXN_READ_RESPONSE
+                );
+            }
+        }
+    }
+
     private boolean losesTieBreak(TxnId currentTxnId, TxnId otherTxnId) {
         return currentTxnId.toString().compareTo(otherTxnId.toString()) > 0;
     }
@@ -263,6 +491,37 @@ public class SerializableTransactionalStorageReplica extends Replica {
         return Optional.ofNullable(latestValue);
     }
 
+    private Optional<StoredIntent> findLatestForeignIntent(String key, TxnId txnId) {
+        Optional<StoredIntent> latestIntent = findLatestIntent(key);
+        if (latestIntent.isEmpty()) {
+            return Optional.empty();
+        }
+        if (latestIntent.get().intentRecord().txnId().equals(txnId)) {
+            return Optional.empty();
+        }
+        return latestIntent;
+    }
+
+    private Optional<StoredIntent> findLatestIntent(String key) {
+        Map<HybridTimestamp, byte[]> versionsUpTo =
+                intentStore.getVersionsUpTo(encodeLogicalKey(key), MAX_TIMESTAMP);
+
+        HybridTimestamp latestTimestamp = null;
+        IntentRecord latestIntent = null;
+        for (Map.Entry<HybridTimestamp, byte[]> entry : versionsUpTo.entrySet()) {
+            if (latestTimestamp == null || entry.getKey().compareTo(latestTimestamp) > 0) {
+                latestTimestamp = entry.getKey();
+                latestIntent = deserializePayload(entry.getValue(), IntentRecord.class);
+            }
+        }
+
+        if (latestTimestamp == null || latestIntent == null) {
+            return Optional.empty();
+        }
+
+        return Optional.of(new StoredIntent(intentKey(key, latestTimestamp), latestIntent));
+    }
+
     private ResolveTransactionResponse resolve(
             ResolveTransactionRequest request,
             HybridTimestamp propagatedTime
@@ -283,6 +542,32 @@ public class SerializableTransactionalStorageReplica extends Replica {
         } catch (Exception e) {
             return new ResolveTransactionResponse(false, hybridClock.now(), e.getMessage());
         }
+    }
+
+    private void resolveCommittedIntent(String key, StoredIntent foreignIntent, HybridTimestamp commitTimestamp) {
+        committedStore.put(versionedKey(key, commitTimestamp), encodeCommittedValue(foreignIntent));
+        intentStore.delete(foreignIntent.key());
+    }
+
+    private GetTransactionStatusResponse getTransactionStatus(
+            GetTransactionStatusRequest request,
+            HybridTimestamp propagatedTime
+    ) {
+        TxnRecord txnRecord = txnRecords.get(request.txnId());
+        if (txnRecord == null) {
+            return new GetTransactionStatusResponse(
+                    null,
+                    null,
+                    hybridClock.now(),
+                    "Transaction not found: " + request.txnId()
+            );
+        }
+        return new GetTransactionStatusResponse(
+                txnRecord.status(),
+                txnRecord.commitTimestamp(),
+                propagatedTime,
+                null
+        );
     }
 
     private Optional<StoredIntent> findStoredIntent(String key, TxnId txnId) {
@@ -350,6 +635,10 @@ public class SerializableTransactionalStorageReplica extends Replica {
 
     private byte[] encodeLogicalKey(String key) {
         return OrderPreservingCodec.encodeString(key);
+    }
+
+    private ProcessId coordinatorFor(TxnId txnId) {
+        return ReplicaRouting.coordinatorFor(txnId, canonicalReplicas);
     }
 
     private byte[] encodeIntentRecord(TxnWriteRequest request) {

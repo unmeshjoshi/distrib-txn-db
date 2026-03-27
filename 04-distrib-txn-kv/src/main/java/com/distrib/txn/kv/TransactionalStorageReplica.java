@@ -162,6 +162,19 @@ public class TransactionalStorageReplica extends Replica {
             HybridTimestamp propagatedTime
     ) {
         try {
+            // Transactional reads in this module mean "read from the transaction's snapshot,
+            // plus this transaction's own writes." That is why we first check for an intent
+            // owned by the same transaction without comparing its intent timestamp to the read
+            // timestamp carried on the request.
+            //
+            // This is intentionally different from a true historical "read at timestamp T"
+            // operation. Own intents are written at replica-assigned write timestamps, which are
+            // usually later than the transaction's original snapshot timestamp. If we enforced
+            // intentTimestamp <= readTimestamp here, normal read-your-own-writes would break.
+            //
+            // If the API later needs explicit historical/as-of reads, that should be modeled as
+            // a separate readAt/readAsOf method with different semantics from this transactional
+            // read path.
             Optional<String> ownIntentValue = findOwnIntentValue(request);
             if (ownIntentValue.isPresent()) {
                 sendReadResponse(message, new TxnReadResponse(ownIntentValue.get(), true, propagatedTime, null));
