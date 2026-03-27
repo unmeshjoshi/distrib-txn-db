@@ -1,5 +1,6 @@
 package com.distrib.versioned.kv;
 
+import clock.HybridClock;
 import clock.HybridTimestamp;
 import com.tickloom.ProcessId;
 import com.tickloom.ProcessParams;
@@ -12,19 +13,25 @@ import java.util.List;
 import java.util.Map;
 
 public class StorageReplicaClient extends ClusterClient {
+    private final HybridClock hybridClock;
 
     public StorageReplicaClient(List<ProcessId> replicas, ProcessParams processParams) {
         super(replicas, processParams);
+        this.hybridClock = new HybridClock(processParams.clock());
     }
 
-    public ListenableFuture<WriteResponse> write(String key, String value, HybridTimestamp clientTime) {
-        return sendRequest(new WriteRequest(key, value, clientTime), replicaFor(key),
+    HybridClock hybridClock() {
+        return hybridClock;
+    }
+
+    public ListenableFuture<WriteResponse> write(String key, String value) {
+        return sendRequest(new WriteRequest(key, value, hybridClock.now()), replicaFor(key),
                 StorageMessageTypes.WRITE_REQUEST);
     }
 
-    public ListenableFuture<ReadResponse> read(String key, HybridTimestamp readTimestamp, HybridTimestamp clientTime) {
+    public ListenableFuture<ReadResponse> read(String key, HybridTimestamp readTimestamp) {
         return sendRequest(
-                new ReadRequest(key, readTimestamp, clientTime),
+                new ReadRequest(key, readTimestamp, hybridClock.now()),
                 replicaFor(key),
                 StorageMessageTypes.READ_REQUEST);
     }
@@ -44,11 +51,13 @@ public class StorageReplicaClient extends ClusterClient {
 
     private void handleWriteResponse(Message message) {
         WriteResponse response = deserialize(message.payload(), WriteResponse.class);
+        hybridClock.tick(response.propagatedTime());
         handleResponse(message.correlationId(), response, message.source());
     }
 
     private void handleReadResponse(Message message) {
         ReadResponse response = deserialize(message.payload(), ReadResponse.class);
+        hybridClock.tick(response.propagatedTime());
         handleResponse(message.correlationId(), response, message.source());
     }
 }

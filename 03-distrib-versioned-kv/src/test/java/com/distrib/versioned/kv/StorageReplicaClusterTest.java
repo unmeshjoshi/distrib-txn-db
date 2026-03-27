@@ -44,13 +44,16 @@ class StorageReplicaClusterTest {
             for (Map.Entry<String, String> entry : kv.entrySet()) {
                 String key = entry.getKey();
                 String value = entry.getValue();
-                WriteResponse writeResponse = await(cluster, client.write(key, value, ts(1000)));
+                WriteResponse writeResponse = await(cluster, client.write(key, value));
                 assertTrue(writeResponse.success());
 
-                ReadResponse readResponse = await(cluster, client.read(key, writeResponse.propagatedTime(), ts(1100)));
+                HybridTimestamp readTimestamp = writeResponse.propagatedTime(); //we can read at time >= the time at which write happened.
+                ReadResponse readResponse = await(cluster, client.read(key, readTimestamp));
                 assertTrue(readResponse.found());
                 assertEquals(value, readResponse.value());
             }
+
+            assertTrue(client.hybridClock().now().compareTo(ts(1000)) >= 0);
 
             for (Map.Entry<String, String> entry : kv.entrySet()) {
                 ProcessId owningReplica = client.replicaFor(entry.getKey());
