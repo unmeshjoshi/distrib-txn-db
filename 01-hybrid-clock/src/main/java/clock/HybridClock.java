@@ -34,14 +34,9 @@ public class HybridClock {
         this.latestTime = new HybridTimestamp(clock.now(), 0);
     }
 
+    //TODO: Implement this method.
     public HybridTimestamp now() {
-        long currentTimeMillis = clock.now();
-        if (latestTime.getWallClockTime() >= currentTimeMillis) {
-            latestTime = new HybridTimestamp(latestTime.getWallClockTime(), latestTime.getTicks() + 1);
-        } else {
-            latestTime = new HybridTimestamp(currentTimeMillis, 0);
-        }
-        return latestTime;
+      return new HybridTimestamp(0, 0);
     }
 
     public HybridTimestamp tick(HybridTimestamp requestTime) {

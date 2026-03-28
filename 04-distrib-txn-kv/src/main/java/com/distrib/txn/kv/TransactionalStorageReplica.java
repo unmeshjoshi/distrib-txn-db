@@ -143,15 +143,7 @@ public class TransactionalStorageReplica extends Replica {
             HybridTimestamp propagatedTime
     ) {
         try {
-            txnRecords.put(request.txnId(), new TxnRecord(
-                    request.txnId(),
-                    TxnStatus.PENDING,
-                    propagatedTime,
-                    null,
-                    new HashSet<>(),
-                    startedTimeout(request.txnId()),
-                    request.isolationLevel()
-            ));
+            //TODO: Exercise 1. Create a Transaction record.
             return new BeginTransactionResponse(true, propagatedTime, null);
         } catch (Exception e) {
             return new BeginTransactionResponse(false, hybridClock.now(), e.getMessage());
@@ -165,12 +157,8 @@ public class TransactionalStorageReplica extends Replica {
      * @return
      */
     private TxnWriteResponse writeIntent(TxnWriteRequest request, HybridTimestamp intentTimestamp) {
-        try {
-            intentStore.put(intentKey(request.key(), intentTimestamp), encodeIntentRecord(request));
-            return new TxnWriteResponse(true, intentTimestamp, null);
-        } catch (Exception e) {
-            return new TxnWriteResponse(false, hybridClock.now(), e.getMessage());
-        }
+        //Exercise 2. Implement this.
+        return new TxnWriteResponse(false, hybridClock.now(), "TODO:Implement this");
     }
 
     private void beginRead(
@@ -270,42 +258,44 @@ public class TransactionalStorageReplica extends Replica {
             CommitTransactionRequest request,
             HybridTimestamp propagatedTime
     ) {
-        TxnRecord txnRecord = txnRecords.get(request.txnId());
-        if (txnRecord == null) {
-            sendCommitFailure(message, "Transaction not found: " + request.txnId());
-            return;
-        }
+        //Exercise 4. Implement commitTransaction.
 
-        HybridTimestamp commitTimestamp = hybridClock.now();
-        Set<ProcessId> participantReplicas = new HashSet<>();
-        for (ParticipantWrites participantWrite : request.participantWrites()) {
-            participantReplicas.add(participantWrite.participantReplica());
-        }
-
-        txnRecords.put(request.txnId(), new TxnRecord(
-                txnRecord.txnId(),
-                TxnStatus.COMMITTED,
-                txnRecord.readTimestamp(),
-                commitTimestamp,
-                participantReplicas,
-                txnRecord.heartbeatTimeout(),
-                txnRecord.isolationLevel()
-        ));
-
-        //We do not wait for responses for resolve requests.
-        // Worst case even if these are lost, the resolution mechanism on individual nodes
-        //handling read and write requests should fix it.
-        sendResolveRequests(
-                request.txnId(),
-                request.participantWrites(),
-                commitTimestamp
-        );
-
-        //Send the commit response to the client.
-        sendCommitResponse(
-                message,
-                new CommitTransactionResponse(true, commitTimestamp, commitTimestamp, null)
-        );
+//        TxnRecord txnRecord = txnRecords.get(request.txnId());
+//        if (txnRecord == null) {
+//            sendCommitFailure(message, "Transaction not found: " + request.txnId());
+//            return;
+//        }
+//
+//        HybridTimestamp commitTimestamp = hybridClock.now();
+//        Set<ProcessId> participantReplicas = new HashSet<>();
+//        for (ParticipantWrites participantWrite : request.participantWrites()) {
+//            participantReplicas.add(participantWrite.participantReplica());
+//        }
+//
+//        txnRecords.put(request.txnId(), new TxnRecord(
+//                txnRecord.txnId(),
+//                TxnStatus.COMMITTED,
+//                txnRecord.readTimestamp(),
+//                commitTimestamp,
+//                participantReplicas,
+//                txnRecord.heartbeatTimeout(),
+//                txnRecord.isolationLevel()
+//        ));
+//
+//        //We do not wait for responses for resolve requests.
+//        // Worst case even if these are lost, the resolution mechanism on individual nodes
+//        //handling read and write requests should fix it.
+//        sendResolveRequests(
+//                request.txnId(),
+//                request.participantWrites(),
+//                commitTimestamp
+//        );
+//
+//        //Send the commit response to the client.
+//        sendCommitResponse(
+//                message,
+//                new CommitTransactionResponse(true, commitTimestamp, commitTimestamp, null)
+//        );
     }
 
     //we
