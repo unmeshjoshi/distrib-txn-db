@@ -114,4 +114,3 @@ The recommended order is:
 
 - The code is optimized for teaching and exploration rather than production completeness.
 - Some modules intentionally show anomalies first and then introduce the fix in a later module.
-- Transaction design notes also exist in `TRANSACTION_DESIGN.md`, which serves as a working design document alongside the code.
