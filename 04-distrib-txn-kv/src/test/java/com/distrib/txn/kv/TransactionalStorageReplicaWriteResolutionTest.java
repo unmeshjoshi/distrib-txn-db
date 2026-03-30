@@ -27,15 +27,15 @@ class TransactionalStorageReplicaWriteResolutionTest extends TransactionalStorag
 
             TxnId txn1 = TxnId.of("txn-5a");
             cluster.setTimeForProcess(CLIENT, 1000);
-            await(cluster, client.beginTransaction(txn1, IsolationLevel.SNAPSHOT));
+            tickUntilComplete(cluster, client.beginTransaction(txn1, IsolationLevel.SNAPSHOT));
             cluster.setTimeForProcess(CLIENT, 1100);
-            await(cluster, client.write(txn1, "account-101", "1000"));
+            tickUntilComplete(cluster, client.write(txn1, "account-101", "1000"));
 
             TxnId txn2 = TxnId.of("txn-5b");
             cluster.setTimeForProcess(CLIENT, 1200);
-            await(cluster, client.beginTransaction(txn2, IsolationLevel.SNAPSHOT));
+            tickUntilComplete(cluster, client.beginTransaction(txn2, IsolationLevel.SNAPSHOT));
             cluster.setTimeForProcess(CLIENT, 1300);
-            TxnWriteResponse write2 = await(cluster, client.write(txn2, "account-101", "2000"));
+            TxnWriteResponse write2 = tickUntilComplete(cluster, client.write(txn2, "account-101", "2000"));
 
             assertFalse(write2.success());
             assertEquals("Conflicting pending transaction", write2.error());
@@ -70,12 +70,12 @@ class TransactionalStorageReplicaWriteResolutionTest extends TransactionalStorag
             );
 
             cluster.setTimeForProcess(CLIENT, 1000);
-            await(cluster, client1.beginTransaction(routingScenario.firstTxnId(), IsolationLevel.SNAPSHOT));
+            tickUntilComplete(cluster, client1.beginTransaction(routingScenario.firstTxnId(), IsolationLevel.SNAPSHOT));
             cluster.setTimeForProcess(CLIENT, 1100);
-            await(cluster, client1.write(routingScenario.firstTxnId(), routingScenario.key(), "1000"));
+            tickUntilComplete(cluster, client1.write(routingScenario.firstTxnId(), routingScenario.key(), "1000"));
 
             CommitTransactionResponse firstCommit =
-                    await(cluster, client1.commit(routingScenario.firstTxnId()));
+                    tickUntilComplete(cluster, client1.commit(routingScenario.firstTxnId()));
 
             assertTrue(firstCommit.success());
 
@@ -93,9 +93,9 @@ class TransactionalStorageReplicaWriteResolutionTest extends TransactionalStorag
             assertTrue(committedValue(participantReplica.committedStore(), routingScenario.key(), ts(5000)).isEmpty());
 
             cluster.setTimeForProcess(CLIENT_2, 1300);
-            await(cluster, client2.beginTransaction(routingScenario.secondTxnId(), IsolationLevel.SNAPSHOT));
+            tickUntilComplete(cluster, client2.beginTransaction(routingScenario.secondTxnId(), IsolationLevel.SNAPSHOT));
             cluster.setTimeForProcess(CLIENT_2, 1400);
-            TxnWriteResponse secondWrite = await(
+            TxnWriteResponse secondWrite = tickUntilComplete(
                     cluster,
                     client2.write(routingScenario.secondTxnId(), routingScenario.key(), "2000")
             );
@@ -107,7 +107,7 @@ class TransactionalStorageReplicaWriteResolutionTest extends TransactionalStorag
                             .isPresent());
 
             TxnReadResponse ownRead =
-                    await(cluster, client2.read(routingScenario.secondTxnId(), routingScenario.key(), ts(1300)));
+                    tickUntilComplete(cluster, client2.read(routingScenario.secondTxnId(), routingScenario.key(), ts(1300)));
             assertTrue(ownRead.found());
             assertEquals("2000", ownRead.value());
         }
