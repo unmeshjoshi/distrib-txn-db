@@ -2,7 +2,9 @@ package kv;
 
 import clock.HybridTimestamp;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Optional;
@@ -36,8 +38,8 @@ class InMemoryMVCCStoreTest {
     }
 
     @Test
-    void testFetchAsOfTime() {
-        MVCCStore store = new InMemoryMVCCStore();
+    void testFetchAsOfTime(@TempDir Path tempDir) {
+        MVCCStore store = new RocksDbMvccStore(tempDir);
 
         var t1 = ts(1000);
         var t2 = ts(1500);
@@ -97,8 +99,8 @@ class InMemoryMVCCStoreTest {
     }
 
     @Test
-    void testScanPrefixAsOfReturnsVisibleVersionPerLogicalKey() {
-        MVCCStore store = new InMemoryMVCCStore();
+    void testScanPrefixAsOfReturnsVisibleVersionPerLogicalKey(@TempDir Path tempDir) {
+        MVCCStore store = new RocksDbMvccStore(tempDir);
         var t1 = ts(1000);
         var t2 = ts(2000);
         var t3 = ts(3000);

@@ -36,7 +36,7 @@ public class HybridClock {
 
     //TODO: Implement this method.
     public HybridTimestamp now() {
-      return new HybridTimestamp(0, 0);
+      return tick(latestTime);
     }
 
     public HybridTimestamp tick(HybridTimestamp requestTime) {

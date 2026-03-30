@@ -105,6 +105,30 @@ Code marker:
 
 - `//Exercise 4. Implement commitTransaction.`
 
+## Exercise 5: Snapshot Isolation Validation
+
+Implement:
+
+- Snapshot Isolation write-write validation
+- reject a stale write when the same key already has a committed version after the
+  transaction's `readTimestamp`
+
+Run:
+
+```bash
+GRADLE_USER_HOME=/Users/unmeshjoshi/work/distrib-txn-db/.gradle-home ./gradlew :04-distrib-txn-kv:test --tests com.distrib.txn.kv.SnapshotIsolationLostUpdatePreventionTest
+```
+
+What to learn:
+
+- Snapshot Isolation prevents lost update on the same key
+- the validation rule compares committed version timestamps against the transaction snapshot
+- this is stricter than basic intent resolution, but still weaker than full serializability
+
+Code marker:
+
+- `// TODO: Exercise 5. Add Snapshot Isolation write-write validation.`
+
 ## Follow-On: Resolve Intents From Other Transactions
 
 Implement:
@@ -133,14 +157,13 @@ This final part is a discussion/demo step rather than a coding step.
 
 Use the anomaly tests to understand what snapshot isolation still does not prevent:
 
-- lost update
 - write skew
 - clock uncertainty on snapshot reads
 
 Run:
 
 ```bash
-GRADLE_USER_HOME=/Users/unmeshjoshi/work/distrib-txn-db/.gradle-home ./gradlew :04-distrib-txn-kv:test --tests com.distrib.txn.kv.LostUpdateAnomalyTest --tests com.distrib.txn.kv.SnapshotIsolationAnomalyTest --tests com.distrib.txn.kv.ClockUncertaintySnapshotTest
+GRADLE_USER_HOME=/Users/unmeshjoshi/work/distrib-txn-db/.gradle-home ./gradlew :04-distrib-txn-kv:test --tests com.distrib.txn.kv.SnapshotIsolationAnomalyTest --tests com.distrib.txn.kv.ClockUncertaintySnapshotTest
 ```
 
 These limitations motivate the next modules:
@@ -154,5 +177,6 @@ These limitations motivate the next modules:
 2. Exercise 2: provisional write
 3. Exercise 3: transactional read
 4. Exercise 4: commit and resolve
-5. Follow-on: intent resolution for reads and writes
-6. Follow-on: study the anomaly tests
+5. Exercise 5: Snapshot Isolation write-write validation
+6. Follow-on: intent resolution for reads and writes
+7. Follow-on: study the anomaly tests

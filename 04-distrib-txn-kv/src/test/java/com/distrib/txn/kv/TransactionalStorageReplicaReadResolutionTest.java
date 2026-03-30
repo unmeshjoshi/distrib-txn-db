@@ -54,10 +54,10 @@ class TransactionalStorageReplicaReadResolutionTest extends TransactionalStorage
 
             TxnId readerTxn = TxnId.of("txn-read-visible");
             cluster.setTimeForProcess(CLIENT, 1000);
-            await(cluster, client.beginTransaction(readerTxn, IsolationLevel.SNAPSHOT));
+            tickUntilComplete(cluster, client.beginTransaction(readerTxn, IsolationLevel.SNAPSHOT));
             cluster.setTimeForProcess(CLIENT, 1200);
 
-            TxnReadResponse readResponse = await(
+            TxnReadResponse readResponse = tickUntilComplete(
                     cluster,
                     client.read(readerTxn, "account-101", ts(1000))
             );
@@ -104,10 +104,10 @@ class TransactionalStorageReplicaReadResolutionTest extends TransactionalStorage
 
             TxnId readerTxn = TxnId.of("txn-read-after-commit");
             cluster.setTimeForProcess(CLIENT, 1300);
-            await(cluster, client.beginTransaction(readerTxn, IsolationLevel.SNAPSHOT));
+            tickUntilComplete(cluster, client.beginTransaction(readerTxn, IsolationLevel.SNAPSHOT));
             cluster.setTimeForProcess(CLIENT, 1400);
 
-            TxnReadResponse readResponse = await(
+            TxnReadResponse readResponse = tickUntilComplete(
                     cluster,
                     client.read(readerTxn, "account-101", ts(1300))
             );

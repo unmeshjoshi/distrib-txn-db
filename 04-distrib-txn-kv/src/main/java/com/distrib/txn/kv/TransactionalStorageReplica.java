@@ -19,6 +19,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import static com.distrib.txn.kv.TxnStatus.PENDING;
+
 /**
  * Tickloom's Replica is used here as a convenient cluster-aware process abstraction. In this
  * workshop, a TransactionalStorageReplica represents one node in the cluster, not one of multiple
@@ -143,8 +145,19 @@ public class TransactionalStorageReplica extends Replica {
             HybridTimestamp propagatedTime
     ) {
         try {
-            //TODO: Exercise 1. Create a Transaction record.
-            return new BeginTransactionResponse(true, propagatedTime, null);
+            // TODO: Exercise 1. Create a transaction record on the coordinator.
+            //
+            // txnRecords.put(request.txnId(), new TxnRecord(
+            //         request.txnId(),
+            //         PENDING,
+            //         propagatedTime,
+            //         null,
+            //         new HashSet<>(),
+            //         startedTimeout(request.txnId()),
+            //         request.isolationLevel()
+            // ));
+            // return new BeginTransactionResponse(true, propagatedTime, null);
+            return new BeginTransactionResponse(false, propagatedTime, "TODO: Exercise 1");
         } catch (Exception e) {
             return new BeginTransactionResponse(false, hybridClock.now(), e.getMessage());
         }
@@ -157,8 +170,15 @@ public class TransactionalStorageReplica extends Replica {
      * @return
      */
     private TxnWriteResponse writeIntent(TxnWriteRequest request, HybridTimestamp intentTimestamp) {
-        //Exercise 2. Implement this.
-        return new TxnWriteResponse(false, hybridClock.now(), "TODO:Implement this");
+        // TODO: Exercise 2. Write a provisional intent into the intent store.
+        //
+        // try {
+        //     intentStore.put(intentKey(request.key(), intentTimestamp), encodeIntentRecord(request));
+        //     return new TxnWriteResponse(true, intentTimestamp, null);
+        // } catch (Exception e) {
+        //     return new TxnWriteResponse(false, hybridClock.now(), e.getMessage());
+        // }
+        return new TxnWriteResponse(false, hybridClock.now(), "TODO: Exercise 2");
     }
 
     private void beginRead(
@@ -167,6 +187,8 @@ public class TransactionalStorageReplica extends Replica {
             HybridTimestamp propagatedTime
     ) {
         try {
+            // TODO: Exercise 3. Implement transactional reads.
+            //
             // Transactional reads in this module mean "read from the transaction's snapshot,
             // plus this transaction's own writes." That is why we first check for an
             // intent/provisional record owned by the same transaction without comparing its intent timestamp to the read
@@ -180,21 +202,22 @@ public class TransactionalStorageReplica extends Replica {
             // If the API later needs explicit historical/as-of reads, that should be modeled as
             // a separate readAt/readAsOf method with different semantics from this transactional
             // read path.
-            Optional<String> ownIntentValue = findOwnIntentValue(request);
-            if (ownIntentValue.isPresent()) {
-                sendReadResponse(message, new TxnReadResponse(ownIntentValue.get(), true, propagatedTime, null));
-                return;
-            }
-
-            Optional<StoredIntent> intentFromOtherTransaction =
-                    findLatestIntentFromOtherTransaction(request.key(), request.txnId());
-            if (intentFromOtherTransaction.isPresent()) {
-                checkAndResolveIntents(
-                        message, request, propagatedTime, intentFromOtherTransaction.get());
-                return;
-            }
-
-            sendReadResponse(message, readCommitted(request, propagatedTime));
+            // Optional<String> ownIntentValue = findOwnIntentValue(request);
+            // if (ownIntentValue.isPresent()) {
+            //     sendReadResponse(message, new TxnReadResponse(ownIntentValue.get(), true, propagatedTime, null));
+            //     return;
+            // }
+            //
+            // Optional<StoredIntent> intentFromOtherTransaction =
+            //         findLatestIntentFromOtherTransaction(request.key(), request.txnId());
+            // if (intentFromOtherTransaction.isPresent()) {
+            //     checkAndResolveIntents(
+            //             message, request, propagatedTime, intentFromOtherTransaction.get());
+            //     return;
+            // }
+            //
+            // sendReadResponse(message, readCommitted(request, propagatedTime));
+            sendReadFailure(message, "TODO: Exercise 3");
         } catch (Exception e) {
             sendReadFailure(message, e.getMessage());
         }
@@ -242,6 +265,10 @@ public class TransactionalStorageReplica extends Replica {
             TxnWriteRequest request,
             HybridTimestamp intentTimestamp
     ) {
+        if (failsSnapshotIsolationWriteValidation(message, request)) {
+            return;
+        }
+
         Optional<StoredIntent> intentFromOtherTransaction = findLatestIntentFromOtherTransaction(request);
         if (intentFromOtherTransaction.isEmpty()) {
             TxnWriteResponse response = writeIntent(request, intentTimestamp);
@@ -258,44 +285,42 @@ public class TransactionalStorageReplica extends Replica {
             CommitTransactionRequest request,
             HybridTimestamp propagatedTime
     ) {
-        //Exercise 4. Implement commitTransaction.
-
-//        TxnRecord txnRecord = txnRecords.get(request.txnId());
-//        if (txnRecord == null) {
-//            sendCommitFailure(message, "Transaction not found: " + request.txnId());
-//            return;
-//        }
-//
-//        HybridTimestamp commitTimestamp = hybridClock.now();
-//        Set<ProcessId> participantReplicas = new HashSet<>();
-//        for (ParticipantWrites participantWrite : request.participantWrites()) {
-//            participantReplicas.add(participantWrite.participantReplica());
-//        }
-//
-//        txnRecords.put(request.txnId(), new TxnRecord(
-//                txnRecord.txnId(),
-//                TxnStatus.COMMITTED,
-//                txnRecord.readTimestamp(),
-//                commitTimestamp,
-//                participantReplicas,
-//                txnRecord.heartbeatTimeout(),
-//                txnRecord.isolationLevel()
-//        ));
-//
-//        //We do not wait for responses for resolve requests.
-//        // Worst case even if these are lost, the resolution mechanism on individual nodes
-//        //handling read and write requests should fix it.
-//        sendResolveRequests(
-//                request.txnId(),
-//                request.participantWrites(),
-//                commitTimestamp
-//        );
-//
-//        //Send the commit response to the client.
-//        sendCommitResponse(
-//                message,
-//                new CommitTransactionResponse(true, commitTimestamp, commitTimestamp, null)
-//        );
+        // TODO: Exercise 4. Mark the transaction committed and resolve its intents.
+        //
+        // TxnRecord txnRecord = txnRecords.get(request.txnId());
+        // if (txnRecord == null) {
+        //     sendCommitFailure(message, "Transaction not found: " + request.txnId());
+        //     return;
+        // }
+        //
+        // HybridTimestamp commitTimestamp = hybridClock.now();
+        // Set<ProcessId> participantReplicas = new HashSet<>();
+        // for (ParticipantWrites participantWrite : request.participantWrites()) {
+        //     participantReplicas.add(participantWrite.participantReplica());
+        // }
+        //
+        // txnRecords.put(request.txnId(), new TxnRecord(
+        //         txnRecord.txnId(),
+        //         TxnStatus.COMMITTED,
+        //         txnRecord.readTimestamp(),
+        //         commitTimestamp,
+        //         participantReplicas,
+        //         txnRecord.heartbeatTimeout(),
+        //         txnRecord.isolationLevel()
+        // ));
+        //
+        // // We do not wait for resolve responses in this module.
+        // sendResolveRequests(
+        //         request.txnId(),
+        //         request.participantWrites(),
+        //         commitTimestamp
+        // );
+        //
+        // sendCommitResponse(
+        //         message,
+        //         new CommitTransactionResponse(true, commitTimestamp, commitTimestamp, null)
+        // );
+        sendCommitFailure(message, "TODO: Exercise 4");
     }
 
     //we
@@ -337,15 +362,29 @@ public class TransactionalStorageReplica extends Replica {
             @Override
             public void onResponse(Object response, ProcessId fromNode) {
                 GetTransactionStatusResponse statusResponse = (GetTransactionStatusResponse) response;
+                //It's crucial to merge the clock.
                 mergeClock(statusResponse.propagatedTime());
+
                 if (statusResponse.error() != null) {
                     sendWriteFailure(clientMessage, statusResponse.error());
                     return;
                 }
 
-                handleIntentFromOtherTransactionStatus(
-                        clientMessage, writeRequest, intentTimestamp, intentFromOtherTransaction, statusResponse);
+                //On a PENDING conflict we must stop here. There is a conflicting
+                //transaction doing write.
+
+                if (statusResponse.status() == PENDING) {
+                    sendWriteFailure(clientMessage, "Conflicting pending transaction");
+                    return;
+                }
+
+                //If following method returns false, that means
+                resolveCommittedOrAbortedTxn(clientMessage, intentFromOtherTransaction, statusResponse);
+                // Retry the write flow only after the blocking intent from the other transaction
+                // has been resolved or removed.
+                writeItentFor(clientMessage, writeRequest, intentTimestamp);
             }
+
 
             @Override
             public void onError(Exception error) {
@@ -367,7 +406,7 @@ public class TransactionalStorageReplica extends Replica {
     // - PENDING: for snapshot reads, ignore the pending intent and read committed data
     // - COMMITTED: resolve the intent and then read committed data
     // - ABORTED: delete the stale intent and then read committed data
-    private void checkAndResolveIntents(
+    private void    checkAndResolveIntents(
             Message clientMessage,
             TxnReadRequest readRequest,
             HybridTimestamp propagatedTime,
@@ -384,8 +423,10 @@ public class TransactionalStorageReplica extends Replica {
                     return;
                 }
 
-                handleIntentFromOtherTransactionStatus(
-                        clientMessage, readRequest, propagatedTime, intentFromOtherTransaction, statusResponse);
+                resolveCommittedOrAbortedTxn(
+                        clientMessage, intentFromOtherTransaction, statusResponse);
+
+                sendReadResponse(clientMessage, readCommitted(readRequest, propagatedTime));
             }
 
             @Override
@@ -403,35 +444,8 @@ public class TransactionalStorageReplica extends Replica {
         ));
     }
 
-    private void handleIntentFromOtherTransactionStatus(
+    private void resolveCommittedOrAbortedTxn(
             Message clientMessage,
-            TxnWriteRequest writeRequest,
-            HybridTimestamp intentTimestamp,
-            StoredIntent intentFromOtherTransaction,
-            GetTransactionStatusResponse statusResponse
-    ) {
-        switch (statusResponse.status()) {
-            case PENDING -> sendWriteFailure(clientMessage, "Conflicting pending transaction");
-            case COMMITTED -> {
-                if (statusResponse.commitTimestamp() == null) {
-                    sendWriteFailure(clientMessage, "Committed transaction is missing commit timestamp");
-                    return;
-                }
-                resolveCommittedIntent(
-                        writeRequest.key(), intentFromOtherTransaction, statusResponse.commitTimestamp());
-                sendWriteResponse(clientMessage, writeIntent(writeRequest, intentTimestamp));
-            }
-            case ABORTED -> {
-                intentStore.delete(intentFromOtherTransaction.key());
-                sendWriteResponse(clientMessage, writeIntent(writeRequest, intentTimestamp));
-            }
-        }
-    }
-
-    private void handleIntentFromOtherTransactionStatus(
-            Message clientMessage,
-            TxnReadRequest readRequest,
-            HybridTimestamp propagatedTime,
             StoredIntent intentFromOtherTransaction,
             GetTransactionStatusResponse statusResponse
     ) {
@@ -441,7 +455,7 @@ public class TransactionalStorageReplica extends Replica {
                 // propagation ensures the coordinator observes a timestamp at least as high as
                 // this read request, so if the transaction eventually commits, its commit
                 // timestamp will be pushed above this read's snapshot timestamp.
-                sendReadResponse(clientMessage, readCommitted(readRequest, propagatedTime));
+
             }
             case COMMITTED -> {
                 if (statusResponse.commitTimestamp() == null) {
@@ -449,12 +463,11 @@ public class TransactionalStorageReplica extends Replica {
                     return;
                 }
                 resolveCommittedIntent(
-                        readRequest.key(), intentFromOtherTransaction, statusResponse.commitTimestamp());
-                sendReadResponse(clientMessage, readCommitted(readRequest, propagatedTime));
+                        //TODO: This is a problem. We should have any method expecting string key in this class.
+                        OrderPreservingCodec.decodeString(intentFromOtherTransaction.key.getKey()), intentFromOtherTransaction, statusResponse.commitTimestamp());
             }
             case ABORTED -> {
                 intentStore.delete(intentFromOtherTransaction.key());
-                sendReadResponse(clientMessage, readCommitted(readRequest, propagatedTime));
             }
         }
     }
@@ -560,6 +573,47 @@ public class TransactionalStorageReplica extends Replica {
             return new TxnReadResponse(committedValue.get(), true, propagatedTime, null);
         }
         return new TxnReadResponse(null, false, propagatedTime, null);
+    }
+
+    /**
+     * Snapshot Isolation write-write validation.
+     *
+     * A transaction is allowed to write key {@code k} only if no other transaction has already
+     * committed a newer version of {@code k} after this transaction's snapshot timestamp.
+     *
+     * In other words:
+     * - transaction T reads from snapshot {@code readTimestamp}
+     * - T later tries to write the same key
+     * - if committedStore already contains a version with {@code commitTs > readTimestamp},
+     *   then T is stale for that key and must fail
+     *
+     * This is the rule that prevents lost updates under Snapshot Isolation. We check it before
+     * creating a new provisional intent, and again after resolving another transaction's intent,
+     * because that resolution may reveal a committed version that is newer than the writer's
+     * snapshot.
+     */
+    private boolean failsSnapshotIsolationWriteValidation(Message message, TxnWriteRequest request) {
+        // TODO: Exercise 5. Add Snapshot Isolation write-write validation.
+        //
+        // if (!hasCommittedVersionAfter(request.key(), request.readTimestamp())) {
+        //     return false;
+        // }
+        //
+        // sendWriteFailure(message, "Conflicting committed transaction");
+        // return true;
+        return false;
+    }
+
+    private boolean hasCommittedVersionAfter(String key, HybridTimestamp readTimestamp) {
+        Map<HybridTimestamp, byte[]> committedVersions =
+                committedStore.getVersionsUpTo(encodeLogicalKey(key), MAX_TIMESTAMP);
+
+        for (HybridTimestamp committedTimestamp : committedVersions.keySet()) {
+            if (committedTimestamp.compareTo(readTimestamp) > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private GetTransactionStatusResponse getTransactionStatus(

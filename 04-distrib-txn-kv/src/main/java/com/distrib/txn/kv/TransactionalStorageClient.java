@@ -16,6 +16,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * This workshop client assumes cluster membership is available to the client SDK,
+ * so it can route requests directly to the correct node.
+ *
+ * In practice there are two common architectures:
+ * 1. Smart client: membership/routing metadata is exposed to the client, which
+ *    sends requests directly to the relevant node.
+ * 2. Thin client: the client sends requests to any cluster node, and the server
+ *    side forwards or coordinates the request on the client's behalf.
+ *
+ * This workshop uses the smart-client model to keep routing decisions explicit
+ * in the code and tests.
+ */
+
 public class TransactionalStorageClient extends ClusterClient {
     private final Map<TxnId, Map<ProcessId, Set<String>>> writesByParticipant;
     private final Map<TxnId, HybridTimestamp> transactionStartTimestamps;

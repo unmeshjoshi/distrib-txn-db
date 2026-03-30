@@ -11,9 +11,10 @@ import kv.MVCCStore;
 import kv.OrderPreservingCodec;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
-import static com.tickloom.testkit.ClusterAssertions.assertEventually;
+import static com.tickloom.testkit.ClusterAssertions.tickUntil;
 import static org.junit.jupiter.api.Assertions.fail;
 
 abstract class TransactionalStorageReplicaTestSupport {
@@ -24,10 +25,23 @@ abstract class TransactionalStorageReplicaTestSupport {
     protected static final ProcessId CLIENT = ProcessId.of("client");
     protected static final ProcessId CLIENT_2 = ProcessId.of("client-2");
 
-    protected <T> T await(Cluster cluster, ListenableFuture<T> future) {
-        assertEventually(cluster, future::isCompleted);
+    /**
+     * Advances the simulated Tickloom cluster until the given future completes.
+     *
+     * In these tests, progress happens only when the cluster is ticked. Ticking delivers queued
+     * messages, lets nodes process events, and allows request/response callbacks to run. So this
+     * helper is not a passive wait; it is the mechanism that drives the simulated distributed
+     * system forward until the future has a result.
+     */
+    protected <T> T tickUntilComplete(Cluster cluster, ListenableFuture<T> future) {
+        tickUntil(cluster, future::isCompleted);
         return future.getResult();
     }
+
+    protected Map<HybridTimestamp, byte[]> getAllCommittedVersions(MVCCStore store, String key) {
+        return store.getVersionsUpTo(OrderPreservingCodec.encodeString(key), ts(Long.MAX_VALUE));
+    }
+
 
     protected Optional<String> committedValue(MVCCStore store, String key, HybridTimestamp readTimestamp) {
         return store.getAsOf(versionedKey(key, readTimestamp)).map(OrderPreservingCodec::decodeString);
