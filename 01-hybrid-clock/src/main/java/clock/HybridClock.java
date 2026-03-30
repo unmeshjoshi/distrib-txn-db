@@ -34,9 +34,10 @@ public class HybridClock {
         this.latestTime = new HybridTimestamp(clock.now(), 0);
     }
 
-    //TODO: Implement this method.
+    // TODO: Exercise 1. Implement now().
     public HybridTimestamp now() {
-      return tick(latestTime);
+        // return tick(latestTime);
+        return new HybridTimestamp(0, 0);
     }
 
     public HybridTimestamp tick(HybridTimestamp requestTime) {
