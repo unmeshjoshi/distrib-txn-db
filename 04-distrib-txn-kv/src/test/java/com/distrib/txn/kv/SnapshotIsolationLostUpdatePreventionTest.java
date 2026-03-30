@@ -56,6 +56,9 @@ class SnapshotIsolationLostUpdatePreventionTest extends TransactionalStorageRepl
             assertEquals(STORAGE_NODE_2, leadingClockClient.coordinatorFor(LEADING_CLOCK_TXN));
             assertEquals(STORAGE_NODE_1, leadingClockClient.coordinatorFor(LAGGING_CLOCK_TXN));
 
+            // Step 1: The leading-clock and lagging-clock clients start with different wall clock
+            // times. The leading client is ahead, so its transaction begins with the higher
+            // snapshot timestamp.
             cluster.setTimeForProcess(LEADING_CLOCK_CLIENT, 1005);
             cluster.setTimeForProcess(LAGGING_CLOCK_CLIENT, 1000);
 
@@ -65,17 +68,18 @@ class SnapshotIsolationLostUpdatePreventionTest extends TransactionalStorageRepl
             );
             assertTrue(leadingReaderBegin.success());
 
-            // The leading-clock client begins first on the faster coordinator and reads x from the
-            // owner node. That read pushes the owner node's HLC forward to the reader's snapshot.
+            // Step 2: The leading-clock transaction reads the shared key from the owner node.
+            // That read propagates the leading transaction's higher Hybrid Timestamp to the owner
+            // node and pushes the owner node's HLC forward.
             TxnReadResponse leadingReaderSeesNoValue = tickUntilComplete(
                     cluster,
                     leadingClockClient.read(LEADING_CLOCK_TXN, SHARED_KEY)
             );
             assertFalse(leadingReaderSeesNoValue.found());
 
-            // The lagging-clock client begins later. Even though its local clock lags behind, its
-            // write to the same key on the owner node is pushed forward by HLC merge and commits
-            // after the leading reader's snapshot.
+            // Step 3: The lagging-clock transaction begins later and writes the same key. Even
+            // though its local wall clock is behind, the owner node merges the write request with
+            // its already-advanced HLC and assigns a newer write timestamp.
             var laggingWriterBegin = tickUntilComplete(
                     cluster,
                     laggingClockClient.beginTransaction(LAGGING_CLOCK_TXN, IsolationLevel.SNAPSHOT)
@@ -89,6 +93,8 @@ class SnapshotIsolationLostUpdatePreventionTest extends TransactionalStorageRepl
             assertTrue(laggingWriteResponse.success());
             assertTrue(laggingWriteResponse.propagatedTime().compareTo(leadingReaderBegin.propagatedTime()) > 0);
 
+            // Step 4: The lagging-clock transaction commits, and Hybrid Timestamp propagation
+            // pushes its commit timestamp above the leading transaction's snapshot read timestamp.
             var laggingWriterCommit = tickUntilComplete(
                     cluster,
                     laggingClockClient.commit(LAGGING_CLOCK_TXN)
@@ -104,9 +110,9 @@ class SnapshotIsolationLostUpdatePreventionTest extends TransactionalStorageRepl
                             .filter("80"::equals)
                             .isPresent());
 
-            // The leading reader now tries to write the same key based on its older snapshot. The
-            // owner node has already committed a newer version, so Snapshot Isolation rejects this
-            // stale overwrite instead of allowing a lost update.
+            // Step 5: The leading-clock transaction now tries to overwrite the same key based on
+            // its older snapshot. Snapshot Isolation must reject this stale write because a newer
+            // committed version of the same key already exists after its read timestamp.
             TxnWriteResponse staleWriteFromLeadingReader = tickUntilComplete(
                     cluster,
                     leadingClockClient.write(LEADING_CLOCK_TXN, SHARED_KEY, "70")
