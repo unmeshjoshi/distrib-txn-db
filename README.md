@@ -2,9 +2,12 @@
 
 `distrib-txn-db` is a workshop-style Java project that builds up a distributed transactional key-value store step by step.
 
+The `main` branch is the workshop/exercise branch. The `solutions` branch contains the complete reference implementation for all modules in this repository.
+
 The project starts with hybrid logical clocks and MVCC, then adds distributed routing, transaction records, intents, clock uncertainty handling, and finally a simplified serializable layer.
 
 The code is intentionally organized as small modules so each concept can be learned in isolation before moving to the next one.
+
 
 ## Modules
 
