@@ -54,13 +54,10 @@ class TransactionalStorageReplicaReadResolutionTest extends TransactionalStorage
 
             TxnId readerTxn = TxnId.of("txn-read-visible");
             cluster.setTimeForProcess(CLIENT, 1000);
-            tickUntilComplete(cluster, client.beginTransaction(readerTxn, IsolationLevel.SNAPSHOT));
+            cluster.tickUntilComplete(client.beginTransaction(readerTxn, IsolationLevel.SNAPSHOT));
             cluster.setTimeForProcess(CLIENT, 1200);
 
-            TxnReadResponse readResponse = tickUntilComplete(
-                    cluster,
-                    client.read(readerTxn, "account-101", ts(1000))
-            );
+            TxnReadResponse readResponse = cluster.tickUntilComplete(client.read(readerTxn, "account-101", ts(1000)));
 
             assertTrue(readResponse.found());
             assertEquals("750", readResponse.value());
@@ -104,13 +101,10 @@ class TransactionalStorageReplicaReadResolutionTest extends TransactionalStorage
 
             TxnId readerTxn = TxnId.of("txn-read-after-commit");
             cluster.setTimeForProcess(CLIENT, 1300);
-            tickUntilComplete(cluster, client.beginTransaction(readerTxn, IsolationLevel.SNAPSHOT));
+            cluster.tickUntilComplete(client.beginTransaction(readerTxn, IsolationLevel.SNAPSHOT));
             cluster.setTimeForProcess(CLIENT, 1400);
 
-            TxnReadResponse readResponse = tickUntilComplete(
-                    cluster,
-                    client.read(readerTxn, "account-101", ts(1300))
-            );
+            TxnReadResponse readResponse = cluster.tickUntilComplete(client.read(readerTxn, "account-101", ts(1300)));
 
             assertTrue(readResponse.found());
             assertEquals("1000", readResponse.value());
