@@ -117,3 +117,7 @@ The recommended order is:
 
 - The code is optimized for teaching and exploration rather than production completeness.
 - Some modules intentionally show anomalies first and then introduce the fix in a later module.
+
+## Acknowledgments
+
+OpenAI Codex was very helpful in scaffolding parts of the code and refining some of the workshop material.
