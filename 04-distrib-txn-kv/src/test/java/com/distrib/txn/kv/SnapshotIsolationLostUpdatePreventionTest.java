@@ -1,5 +1,6 @@
 package com.distrib.txn.kv;
 
+import clock.HybridTimestamp;
 import com.tickloom.ProcessId;
 import com.tickloom.testkit.Cluster;
 import kv.InMemoryMVCCStore;
@@ -63,6 +64,7 @@ class SnapshotIsolationLostUpdatePreventionTest extends TransactionalStorageRepl
 
             BeginTransactionResponse leadingReaderBegin = cluster.tickUntilComplete(leadingClockClient.beginTransaction(LEADING_CLOCK_TXN, IsolationLevel.SNAPSHOT));
             assertTrue(leadingReaderBegin.success());
+            HybridTimestamp leadingSnapshot = leadingReaderBegin.propagatedTime();
 
             // Step 2: The lagging-clock transaction begins later
             var laggingWriterBegin = cluster.tickUntilComplete(laggingClockClient.beginTransaction(LAGGING_CLOCK_TXN, IsolationLevel.SNAPSHOT));
@@ -72,7 +74,8 @@ class SnapshotIsolationLostUpdatePreventionTest extends TransactionalStorageRepl
             //This creates an intent at a provisional timestamp which might be lower than leading txn timestamp.
             var laggingWriteResponse = cluster.tickUntilComplete(laggingClockClient.write(LAGGING_CLOCK_TXN, SHARED_KEY, "80"));
             assertTrue(laggingWriteResponse.success());
-            assertTrue(laggingWriteResponse.propagatedTime().compareTo(leadingReaderBegin.propagatedTime()) < 0);
+            assertTrue(laggingWriteResponse.propagatedTime().compareTo(leadingSnapshot) < 0,
+                    "Lagging write intent occurs before the leading transaction's snapshot");
 
             // Step 3: The leading-clock transaction reads the shared key from the owner node.
             // That read propagates the leading transaction's higher Hybrid Timestamp to the owner
@@ -90,7 +93,9 @@ class SnapshotIsolationLostUpdatePreventionTest extends TransactionalStorageRepl
             assertTrue(laggingWriterCommit.success());
 
             //lagging-clock transaction committed at
-            assertTrue(laggingWriterCommit.commitTimestamp().compareTo(leadingReaderBegin.propagatedTime()) > 0);
+            HybridTimestamp laggingCommitTime = laggingWriterCommit.commitTimestamp();
+            assertTrue(laggingCommitTime.compareTo(leadingSnapshot) > 0,
+                    "Lagging transaction is forced to commit AFTER the leading transaction's snapshot");
 
             TransactionalStorageReplica ownerReplica =
                     (TransactionalStorageReplica) cluster.getProcess(STORAGE_NODE_1);
@@ -104,7 +109,8 @@ class SnapshotIsolationLostUpdatePreventionTest extends TransactionalStorageRepl
             // its older snapshot. Snapshot Isolation must reject this stale write because a newer
             // committed version of the same key already exists after its read timestamp.
             TxnWriteResponse staleWriteFromLeadingReader = cluster.tickUntilComplete(leadingClockClient.write(LEADING_CLOCK_TXN, SHARED_KEY, "70"));
-            assertFalse(staleWriteFromLeadingReader.success());
+            assertFalse(staleWriteFromLeadingReader.success(),
+                    "SI validation fails: committed version (" + laggingCommitTime + ") > snapshot (" + leadingSnapshot + ")");
             assertEquals("Conflicting committed transaction", staleWriteFromLeadingReader.error());
 
         }

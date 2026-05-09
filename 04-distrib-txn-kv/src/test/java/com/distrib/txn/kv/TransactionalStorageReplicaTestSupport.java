@@ -11,6 +11,8 @@ import kv.OrderPreservingCodec;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Predicate;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -100,5 +102,44 @@ abstract class TransactionalStorageReplicaTestSupport {
             ProcessId coordinator,
             ProcessId participant
     ) {
+    }
+
+    protected record TopologyScenario(
+            String key,
+            TxnId txnId1,
+            TxnId txnId2,
+            ProcessId keyOwner,
+            ProcessId coordinator1,
+            ProcessId coordinator2
+    ) {
+    }
+
+    protected static TopologyScenario findTopology(
+            TransactionalStorageClient client,
+            Predicate<TopologyScenario> constraint
+    ) {
+        List<String> candidateKeys = IntStream.range(0, 20)
+                .mapToObj(i -> "key-" + i)
+                .toList();
+        List<TxnId> candidateTxnIds = IntStream.range(0, 20)
+                .mapToObj(i -> TxnId.of("txn-" + i))
+                .toList();
+
+        for (String key : candidateKeys) {
+            ProcessId keyOwner = client.replicaFor(key);
+            for (TxnId txn1 : candidateTxnIds) {
+                ProcessId coord1 = client.coordinatorFor(txn1);
+                for (TxnId txn2 : candidateTxnIds) {
+                    if (txn2.equals(txn1)) continue;
+                    ProcessId coord2 = client.coordinatorFor(txn2);
+                    TopologyScenario scenario = new TopologyScenario(
+                            key, txn1, txn2, keyOwner, coord1, coord2);
+                    if (constraint.test(scenario)) return scenario;
+                }
+            }
+        }
+
+        fail("Could not find a topology matching the required constraint.");
+        throw new IllegalStateException("Unreachable");
     }
 }
