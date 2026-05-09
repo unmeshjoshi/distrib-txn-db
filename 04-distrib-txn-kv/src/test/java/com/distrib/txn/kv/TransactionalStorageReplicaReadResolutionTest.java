@@ -57,7 +57,7 @@ class TransactionalStorageReplicaReadResolutionTest extends TransactionalStorage
             cluster.tickUntilComplete(client.beginTransaction(readerTxn, IsolationLevel.SNAPSHOT));
             cluster.setTimeForProcess(CLIENT, 1200);
 
-            TxnReadResponse readResponse = cluster.tickUntilComplete(client.read(readerTxn, "account-101", ts(1000)));
+            TxnReadResponse readResponse = cluster.tickUntilComplete(client.read(readerTxn, "account-101"));
 
             assertTrue(readResponse.found());
             assertEquals("750", readResponse.value());
@@ -104,7 +104,7 @@ class TransactionalStorageReplicaReadResolutionTest extends TransactionalStorage
             cluster.tickUntilComplete(client.beginTransaction(readerTxn, IsolationLevel.SNAPSHOT));
             cluster.setTimeForProcess(CLIENT, 1400);
 
-            TxnReadResponse readResponse = cluster.tickUntilComplete(client.read(readerTxn, "account-101", ts(1300)));
+            TxnReadResponse readResponse = cluster.tickUntilComplete(client.read(readerTxn, "account-101"));
 
             assertTrue(readResponse.found());
             assertEquals("1000", readResponse.value());

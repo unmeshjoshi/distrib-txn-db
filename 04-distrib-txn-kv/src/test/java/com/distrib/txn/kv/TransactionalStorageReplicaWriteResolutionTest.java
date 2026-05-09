@@ -104,7 +104,7 @@ class TransactionalStorageReplicaWriteResolutionTest extends TransactionalStorag
                             .isPresent());
 
             TxnReadResponse ownRead =
-                    cluster.tickUntilComplete(client2.read(routingScenario.secondTxnId(), routingScenario.key(), ts(1300)));
+                    cluster.tickUntilComplete(client2.read(routingScenario.secondTxnId(), routingScenario.key()));
             assertTrue(ownRead.found());
             assertEquals("2000", ownRead.value());
         }

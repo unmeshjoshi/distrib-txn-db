@@ -93,7 +93,7 @@ public class TransactionalStorageClient extends ClusterClient {
         return read(txnId, key, transactionStartTimeFor(txnId), hybridClock.now());
     }
 
-    public ListenableFuture<TxnReadResponse> read(
+    protected ListenableFuture<TxnReadResponse> read(
             TxnId txnId,
             String key,
             HybridTimestamp readTimestamp

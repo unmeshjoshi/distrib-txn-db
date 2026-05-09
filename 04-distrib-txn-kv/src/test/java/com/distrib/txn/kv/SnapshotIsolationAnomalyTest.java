@@ -45,7 +45,6 @@ class SnapshotIsolationAnomalyTest {
 
             TxnId txn1 = TxnId.of("txn-write-skew-1");
             TxnId txn2 = TxnId.of("txn-write-skew-2");
-            HybridTimestamp snapshotTimestamp = ts(1000);
 
             cluster.setTimeForProcess(CLIENT_1, 1000);
             cluster.setTimeForProcess(CLIENT_2, 1000);
@@ -58,16 +57,16 @@ class SnapshotIsolationAnomalyTest {
             // different keys, so both commits succeed and the invariant can be broken.
             cluster.setTimeForProcess(CLIENT_1, 1010);
             TxnReadResponse txn1ReadsAlice =
-                    await(cluster, client1.read(txn1, "doctor-alice", snapshotTimestamp));
+                    await(cluster, client1.read(txn1, "doctor-alice"));
             cluster.setTimeForProcess(CLIENT_1, 1020);
             TxnReadResponse txn1ReadsBob =
-                    await(cluster, client1.read(txn1, "doctor-bob", snapshotTimestamp));
+                    await(cluster, client1.read(txn1, "doctor-bob"));
             cluster.setTimeForProcess(CLIENT_2, 1030);
             TxnReadResponse txn2ReadsAlice =
-                    await(cluster, client2.read(txn2, "doctor-alice", snapshotTimestamp));
+                    await(cluster, client2.read(txn2, "doctor-alice"));
             cluster.setTimeForProcess(CLIENT_2, 1040);
             TxnReadResponse txn2ReadsBob =
-                    await(cluster, client2.read(txn2, "doctor-bob", snapshotTimestamp));
+                    await(cluster, client2.read(txn2, "doctor-bob"));
 
             assertEquals("on-call", txn1ReadsAlice.value());
             assertEquals("on-call", txn1ReadsBob.value());

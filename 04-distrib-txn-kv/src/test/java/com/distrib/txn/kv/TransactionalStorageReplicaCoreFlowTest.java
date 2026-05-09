@@ -83,7 +83,7 @@ class TransactionalStorageReplicaCoreFlowTest extends TransactionalStorageReplic
             assertTrue(committedValue(replica.committedStore(), "account-101", ts(5000)).isEmpty());
 
             cluster.setTimeForProcess(CLIENT, 1200);
-            TxnReadResponse readResponse = cluster.tickUntilComplete(client.read(txnId, "account-101", writeResponse.propagatedTime()));
+            TxnReadResponse readResponse = cluster.tickUntilComplete(client.read(txnId, "account-101"));
 
             assertTrue(readResponse.found());
             assertEquals("1000", readResponse.value());
@@ -155,10 +155,11 @@ class TransactionalStorageReplicaCoreFlowTest extends TransactionalStorageReplic
 
             TransactionalStorageClient client = cluster.newClient(CLIENT, TransactionalStorageClient::new);
             TxnId txnId = TxnId.of("txn-3");
+            cluster.setTimeForProcess(CLIENT, 1000);
 
             cluster.tickUntilComplete(client.beginTransaction(txnId, IsolationLevel.SNAPSHOT));
 
-            TxnReadResponse readResponse = cluster.tickUntilComplete(client.read(txnId, "account-101", ts(1000)));
+            TxnReadResponse readResponse = cluster.tickUntilComplete(client.read(txnId, "account-101"));
 
             assertTrue(readResponse.found());
             assertEquals("750", readResponse.value());
