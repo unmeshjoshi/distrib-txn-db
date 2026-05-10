@@ -1,5 +1,6 @@
 package com.distrib.txn.kv;
 
+import com.tickloom.Process;
 import com.tickloom.ProcessId;
 import com.tickloom.testkit.Cluster;
 import kv.InMemoryMVCCStore;
@@ -55,7 +56,7 @@ class TransactionalStorageReplicaCoreFlowTest extends TransactionalStorageReplic
     @Test
     void txnWriteStoresIntentAndReadReturnsOwnIntent() throws Exception {
         try (Cluster cluster = new Cluster()
-                .withProcessIds(List.of(STORAGE_NODE_1))
+                .withProcessIds(List.of(STORAGE_NODE_1, STORAGE_NODE_2, STORAGE_NODE_3))
                 .useSimulatedNetwork()
                 .build((peerIds, params) -> new TransactionalStorageReplica(
                         new InMemoryMVCCStore(),
@@ -77,8 +78,9 @@ class TransactionalStorageReplicaCoreFlowTest extends TransactionalStorageReplic
             assertTrue(writeResponse.success());
             assertEquals(ts(1100, 1), writeResponse.propagatedTime());
 
+            ProcessId processId = client.replicaFor("account-101");
             TransactionalStorageReplica replica =
-                    (TransactionalStorageReplica) cluster.getProcess(STORAGE_NODE_1);
+                    (TransactionalStorageReplica) cluster.getProcess(processId);
             assertTrue(intentExists(replica.intentStore(), "account-101", writeResponse.propagatedTime()));
             assertTrue(committedValue(replica.committedStore(), "account-101", ts(5000)).isEmpty());
 
@@ -94,7 +96,7 @@ class TransactionalStorageReplicaCoreFlowTest extends TransactionalStorageReplic
     @Test
     void commitMovesIntentToCommittedStoreAndMarksTransactionCommitted() throws Exception {
         try (Cluster cluster = new Cluster()
-                .withProcessIds(List.of(STORAGE_NODE_1))
+                .withProcessIds(List.of(STORAGE_NODE_1, STORAGE_NODE_2, STORAGE_NODE_3))
                 .useSimulatedNetwork()
                 .build((peerIds, params) -> new TransactionalStorageReplica(
                         new InMemoryMVCCStore(),
@@ -117,22 +119,26 @@ class TransactionalStorageReplicaCoreFlowTest extends TransactionalStorageReplic
             assertTrue(commitResponse.success());
             assertNotNull(commitResponse.commitTimestamp());
 
+            ProcessId processId = client.coordinatorFor(txnId);
             TransactionalStorageReplica replica =
-                    (TransactionalStorageReplica) cluster.getProcess(STORAGE_NODE_1);
+                    (TransactionalStorageReplica) cluster.getProcess(processId);
             TxnRecord txnRecord = replica.txnRecords().get(txnId);
 
             assertNotNull(txnRecord);
             assertEquals(TxnStatus.COMMITTED, txnRecord.status());
             assertEquals(commitResponse.commitTimestamp(), txnRecord.commitTimestamp());
-            assertEquals(Set.of(STORAGE_NODE_1), txnRecord.participantReplicas());
+            assertEquals(Set.of(client.replicaFor("account-101")), txnRecord.participantReplicas());
 
+            ProcessId replicaIdForKey = client.replicaFor("account-101");
+
+            TransactionalStorageReplica replicaForKey = (TransactionalStorageReplica) cluster.getProcess(replicaIdForKey);
             com.tickloom.testkit.ClusterAssertions.assertEventually(cluster, () ->
-                    committedValue(replica.committedStore(), "account-101", txnRecord.commitTimestamp())
+                    committedValue(replicaForKey.committedStore(), "account-101", txnRecord.commitTimestamp())
                             .filter("1000"::equals)
                             .isPresent()
             );
             com.tickloom.testkit.ClusterAssertions.assertEventually(cluster, () ->
-                    !intentExists(replica.intentStore(), "account-101", ts(5000)));
+                    !intentExists(replicaForKey.intentStore(), "account-101", ts(5000)));
         }
     }
 

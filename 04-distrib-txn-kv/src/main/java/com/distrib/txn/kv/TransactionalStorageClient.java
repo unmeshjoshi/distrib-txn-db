@@ -137,11 +137,11 @@ public class TransactionalStorageClient extends ClusterClient {
         return future;
     }
 
-    ProcessId coordinatorFor(TxnId txnId) {
+    public ProcessId coordinatorFor(TxnId txnId) {
         return ReplicaRouting.coordinatorFor(txnId, canonicalReplicas);
     }
 
-    ProcessId replicaFor(String key) {
+    public ProcessId replicaFor(String key) {
         return ReplicaRouting.replicaFor(key, canonicalReplicas);
     }
 
