@@ -1,7 +1,7 @@
 package com.distrib.versioned.kv.helloworld;
 
 import com.tickloom.ProcessId;
-import com.tickloom.future.ListenableFuture;
+import com.tickloom.future.TickCompletableFuture;
 import com.tickloom.testkit.Cluster;
 import org.junit.jupiter.api.Test;
 
@@ -32,7 +32,7 @@ class StorageReplicaHelloWorldTest {
         }
     }
 
-    private <T> T await(Cluster cluster, ListenableFuture<T> future) {
+    private <T> T await(Cluster cluster, TickCompletableFuture<T> future) {
         assertEventually(cluster, future::isCompleted);
         return future.getResult();
     }

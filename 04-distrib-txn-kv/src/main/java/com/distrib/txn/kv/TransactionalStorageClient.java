@@ -5,7 +5,7 @@ import clock.HybridTimestamp;
 import com.tickloom.ProcessId;
 import com.tickloom.ProcessParams;
 import com.tickloom.algorithms.replication.ClusterClient;
-import com.tickloom.future.ListenableFuture;
+import com.tickloom.future.TickCompletableFuture;
 import com.tickloom.messaging.Message;
 import com.tickloom.messaging.MessageType;
 
@@ -44,56 +44,53 @@ public class TransactionalStorageClient extends ClusterClient {
         this.hybridClock = new HybridClock(processParams.clock());
     }
 
-    HybridClock hybridClock() {
+    public HybridClock hybridClock() {
         return hybridClock;
     }
 
-    public ListenableFuture<BeginTransactionResponse> beginTransaction(TxnId txnId, IsolationLevel isolationLevel) {
-        ListenableFuture<BeginTransactionResponse> future = sendRequest(
+    public TickCompletableFuture<BeginTransactionResponse> beginTransaction(TxnId txnId, IsolationLevel isolationLevel) {
+        TickCompletableFuture<BeginTransactionResponse> future = sendRequest(
                 new BeginTransactionRequest(txnId, isolationLevel, hybridClock.now()),
                 coordinatorFor(txnId),
                 TransactionalMessageTypes.BEGIN_TRANSACTION_REQUEST
         );
-        future.handle((response, error) -> {
+        return future.whenComplete((response, error) -> {
             if (error == null && response != null && response.success()) {
                 transactionStartTimestamps.put(txnId, response.propagatedTime());
             }
         });
-        return future;
     }
 
-    public ListenableFuture<TxnWriteResponse> write(TxnId txnId, String key, String value) {
+    public TickCompletableFuture<TxnWriteResponse> write(TxnId txnId, String key, String value) {
         return write(txnId, key, value, transactionStartTimeFor(txnId), hybridClock.now());
     }
 
-    protected ListenableFuture<TxnWriteResponse> write(
+    protected TickCompletableFuture<TxnWriteResponse> write(
             TxnId txnId,
             String key,
             String value,
             HybridTimestamp readTimestamp,
             HybridTimestamp clientTime
     ) {
-        ListenableFuture<TxnWriteResponse> future = sendRequest(
+        TickCompletableFuture<TxnWriteResponse> future = sendRequest(
                 new TxnWriteRequest(txnId, key, value, readTimestamp, clientTime),
                 replicaFor(key),
                 TransactionalMessageTypes.TXN_WRITE_REQUEST
         );
 
         ProcessId participant = replicaFor(key);
-        future.handle((response, error) -> {
+        return future.whenComplete((response, error) -> {
             if (error == null && response != null && response.success()) {
                 trackWrite(txnId, participant, key);
             }
         });
-
-        return future;
     }
 
-    public ListenableFuture<TxnReadResponse> read(TxnId txnId, String key) {
+    public TickCompletableFuture<TxnReadResponse> read(TxnId txnId, String key) {
         return read(txnId, key, transactionStartTimeFor(txnId), hybridClock.now());
     }
 
-    protected ListenableFuture<TxnReadResponse> read(
+    protected TickCompletableFuture<TxnReadResponse> read(
             TxnId txnId,
             String key,
             HybridTimestamp readTimestamp
@@ -101,13 +98,13 @@ public class TransactionalStorageClient extends ClusterClient {
         return read(txnId, key, readTimestamp, hybridClock.now());
     }
 
-    protected ListenableFuture<TxnReadResponse> read(
+    protected TickCompletableFuture<TxnReadResponse> read(
             TxnId txnId,
             String key,
             HybridTimestamp readTimestamp,
             HybridTimestamp clientTime
     ) {
-        ListenableFuture<TxnReadResponse> future = sendRequest(
+        TickCompletableFuture<TxnReadResponse> future = sendRequest(
                 new TxnReadRequest(txnId, key, readTimestamp, clientTime),
                 replicaFor(key),
                 TransactionalMessageTypes.TXN_READ_REQUEST
@@ -115,26 +112,25 @@ public class TransactionalStorageClient extends ClusterClient {
         return future;
     }
 
-    public ListenableFuture<CommitTransactionResponse> commit(TxnId txnId) {
+    public TickCompletableFuture<CommitTransactionResponse> commit(TxnId txnId) {
         return commit(txnId, hybridClock.now());
     }
 
-    protected ListenableFuture<CommitTransactionResponse> commit(
+    protected TickCompletableFuture<CommitTransactionResponse> commit(
             TxnId txnId,
             HybridTimestamp clientTime
     ) {
-        ListenableFuture<CommitTransactionResponse> future = sendRequest(
+        TickCompletableFuture<CommitTransactionResponse> future = sendRequest(
                 new CommitTransactionRequest(txnId, participantWritesFor(txnId), clientTime),
                 coordinatorFor(txnId),
                 TransactionalMessageTypes.COMMIT_TRANSACTION_REQUEST
         );
-        future.handle((response, error) -> {
+        return future.whenComplete((response, error) -> {
             if (error == null && response != null && response.success()) {
                 writesByParticipant.remove(txnId);
                 transactionStartTimestamps.remove(txnId);
             }
         });
-        return future;
     }
 
     public ProcessId coordinatorFor(TxnId txnId) {

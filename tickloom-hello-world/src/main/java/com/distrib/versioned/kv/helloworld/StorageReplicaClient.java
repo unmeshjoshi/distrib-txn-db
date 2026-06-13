@@ -3,7 +3,7 @@ package com.distrib.versioned.kv.helloworld;
 import com.tickloom.ProcessId;
 import com.tickloom.ProcessParams;
 import com.tickloom.algorithms.replication.ClusterClient;
-import com.tickloom.future.ListenableFuture;
+import com.tickloom.future.TickCompletableFuture;
 import com.tickloom.messaging.Message;
 import com.tickloom.messaging.MessageType;
 
@@ -16,7 +16,7 @@ public class StorageReplicaClient extends ClusterClient {
         super(replicas, processParams);
     }
 
-    public ListenableFuture<HelloResponse> sayHello(String name) {
+    public TickCompletableFuture<HelloResponse> sayHello(String name) {
         return sendRequest(new HelloRequest(name), replicaEndpoints.getFirst(), StorageMessageTypes.HELLO_REQUEST);
     }
 

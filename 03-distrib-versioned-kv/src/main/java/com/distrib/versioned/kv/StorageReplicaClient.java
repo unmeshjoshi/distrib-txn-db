@@ -5,7 +5,7 @@ import clock.HybridTimestamp;
 import com.tickloom.ProcessId;
 import com.tickloom.ProcessParams;
 import com.tickloom.algorithms.replication.ClusterClient;
-import com.tickloom.future.ListenableFuture;
+import com.tickloom.future.TickCompletableFuture;
 import com.tickloom.messaging.Message;
 import com.tickloom.messaging.MessageType;
 
@@ -24,12 +24,12 @@ public class StorageReplicaClient extends ClusterClient {
         return hybridClock;
     }
 
-    public ListenableFuture<WriteResponse> write(String key, String value) {
+    public TickCompletableFuture<WriteResponse> write(String key, String value) {
         return sendRequest(new WriteRequest(key, value, hybridClock.now()), replicaFor(key),
                 StorageMessageTypes.WRITE_REQUEST);
     }
 
-    public ListenableFuture<ReadResponse> read(String key, HybridTimestamp readTimestamp) {
+    public TickCompletableFuture<ReadResponse> read(String key, HybridTimestamp readTimestamp) {
         return sendRequest(
                 new ReadRequest(key, readTimestamp, hybridClock.now()),
                 replicaFor(key),

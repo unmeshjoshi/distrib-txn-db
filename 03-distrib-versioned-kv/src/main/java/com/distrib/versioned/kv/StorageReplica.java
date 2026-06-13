@@ -20,6 +20,7 @@ import java.util.Optional;
  * workshop, a StorageReplica represents one node in the cluster, not one of multiple replicas of
  * the same shard/data for replication.
  */
+/// each partition have its own MVCCStore.
 public class StorageReplica extends Replica {
     private final MVCCStore store;
     private final HybridClock hybridClock;

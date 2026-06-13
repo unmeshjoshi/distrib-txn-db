@@ -3,7 +3,7 @@ package com.distrib.txn.kv;
 import clock.HybridTimestamp;
 import com.tickloom.ProcessId;
 import com.tickloom.ProcessParams;
-import com.tickloom.future.ListenableFuture;
+import com.tickloom.future.TickCompletableFuture;
 
 import java.util.HashMap;
 import java.util.List;
@@ -18,25 +18,25 @@ public class ClockUncertaintyTransactionalStorageClient extends TransactionalSto
     }
 
     @Override
-    protected ListenableFuture<TxnReadResponse> read(
+    protected TickCompletableFuture<TxnReadResponse> read(
             TxnId txnId,
             String key,
             HybridTimestamp readTimestamp,
             HybridTimestamp clientTime
     ) {
-        ListenableFuture<TxnReadResponse> result = new ListenableFuture<>();
+        TickCompletableFuture<TxnReadResponse> result = new TickCompletableFuture<>();
         readWithRestart(result, txnId, key, effectiveReadTimestamp(txnId, readTimestamp), clientTime);
         return result;
     }
 
     private void readWithRestart(
-            ListenableFuture<TxnReadResponse> result,
+            TickCompletableFuture<TxnReadResponse> result,
             TxnId txnId,
             String key,
             HybridTimestamp readTimestamp,
             HybridTimestamp clientTime
     ) {
-        super.read(txnId, key, readTimestamp, clientTime).handle((response, error) -> {
+        super.read(txnId, key, readTimestamp, clientTime).whenComplete((response, error) -> {
             if (error != null) {
                 result.fail(error);
                 return;

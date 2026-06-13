@@ -14,6 +14,7 @@ import com.tickloom.util.Clock;
  * - YugabyteDB: https://github.com/yugabyte/yugabyte-db/blob/master/src/yb/common/hybrid_time.h
  * - MongoDB: https://github.com/mongodb/mongo/blob/master/src/mongo/db/logical_clock.h
  */
+//one instance per server process. //System.currentTimeMillis.. => hybridClockInstance.now();
 public class HybridClock {
     /**
      * Note on Clock implementation:
@@ -36,10 +37,10 @@ public class HybridClock {
 
     // TODO: Exercise 1. Implement now().
     public HybridTimestamp now() {
-        // return tick(latestTime);
-        return new HybridTimestamp(0, 0);
+        return tick(latestTime);
     }
 
+    //merging the timestamps.
     public HybridTimestamp tick(HybridTimestamp requestTime) {
         long currentWallClockTime = clock.now();
         long mergedWallClockTime = mergedWallClockTime(currentWallClockTime, requestTime);
