@@ -1,7 +1,6 @@
 package com.distrib.txn.kv;
 
 import clock.HybridTimestamp;
-import com.distrib.txn.kv.customdsl.TopologyScenario;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tickloom.ProcessId;
 import com.tickloom.util.Timeout;
@@ -102,6 +101,16 @@ abstract class TransactionalStorageReplicaTestSupport {
             String key,
             ProcessId coordinator,
             ProcessId participant
+    ) {
+    }
+
+    protected record TopologyScenario(
+            String key,
+            TxnId txnId1,
+            TxnId txnId2,
+            ProcessId keyOwner,
+            ProcessId coordinator1,
+            ProcessId coordinator2
     ) {
     }
 

@@ -1,6 +1,6 @@
 subprojects {
     apply plugin: 'java'
-
+    def tickloomVersion = '0.1.0-alpha.30'
     java {
         toolchain {
             languageVersion = JavaLanguageVersion.of(21)
@@ -15,8 +15,8 @@ subprojects {
 
     dependencies {
         testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
-        implementation 'io.github.unmeshjoshi:tickloom:0.1.0-alpha.29'
-        testImplementation 'io.github.unmeshjoshi:tickloom-testkit:0.1.0-alpha.29'
+        implementation "io.github.unmeshjoshi:tickloom:${tickloomVersion}"
+        testImplementation "io.github.unmeshjoshi:tickloom-testkit:${tickloomVersion}"
     }
 
     tasks.withType(Test).configureEach {

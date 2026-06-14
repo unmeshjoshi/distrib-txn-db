@@ -36,7 +36,8 @@ public class TransactionalStorageDslTest {
 
         Scenario<TransactionalStorageClient> s = TxnScenarios.scenario("Core Flow Test")
                 .servers(NODE1, NODE2, NODE3)
-                .client(CLIENT).connectedTo(NODE1)
+                .clients(CLIENT)
+
                 .given(g -> g.clientHlc(CLIENT, seedTime))
                 .steps(steps -> {
                     steps.client(CLIENT).beginTransaction(txnId, IsolationLevel.SNAPSHOT)
@@ -64,8 +65,7 @@ public class TransactionalStorageDslTest {
 
         Scenario<TransactionalStorageClient> s = TxnScenarios.scenario("SI first-committer-wins")
                 .servers(NODE1, NODE2, NODE3)
-                .client(READER).connectedTo(NODE1)
-                .client(WRITER).connectedTo(NODE1)
+                .clients(READER, WRITER)
                 .given(g -> g.clientHlc(READER, seed).clientHlc(WRITER, seed))
                 .steps(steps -> {
                     // Reader begins first so its snapshot is captured before any writes exist.

@@ -1,7 +1,6 @@
 package com.distrib.txn.kv;
 
 import clock.HybridTimestamp;
-import com.distrib.txn.kv.customdsl.TopologyScenario;
 import com.tickloom.ProcessId;
 import com.tickloom.testkit.Cluster;
 import kv.InMemoryMVCCStore;
