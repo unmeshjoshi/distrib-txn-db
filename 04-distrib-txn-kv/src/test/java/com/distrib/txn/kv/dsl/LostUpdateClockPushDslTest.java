@@ -1,8 +1,7 @@
-package com.distrib.txn.kv.dsl2;
+package com.distrib.txn.kv.dsl;
 
 import clock.HybridTimestamp;
 import com.distrib.txn.kv.BeginTransactionResponse;
-import com.distrib.txn.kv.CommitTransactionResponse;
 import com.distrib.txn.kv.IsolationLevel;
 import com.distrib.txn.kv.TransactionalStorageClient;
 import com.distrib.txn.kv.TransactionalStorageReplica;

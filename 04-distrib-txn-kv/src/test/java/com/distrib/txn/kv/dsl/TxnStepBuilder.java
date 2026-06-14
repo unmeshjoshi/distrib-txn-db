@@ -1,4 +1,4 @@
-package com.distrib.txn.kv.dsl2;
+package com.distrib.txn.kv.dsl;
 
 import clock.HybridTimestamp;
 import com.distrib.txn.kv.IsolationLevel;

@@ -1,4 +1,4 @@
-package com.distrib.txn.kv.dsl2;
+package com.distrib.txn.kv.dsl;
 
 import com.distrib.txn.kv.TransactionalStorageClient;
 import com.distrib.txn.kv.TransactionalStorageReplica;

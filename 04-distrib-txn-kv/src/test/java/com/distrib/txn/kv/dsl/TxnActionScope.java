@@ -1,4 +1,4 @@
-package com.distrib.txn.kv.dsl2;
+package com.distrib.txn.kv.dsl;
 
 import com.distrib.txn.kv.BeginTransactionResponse;
 import com.distrib.txn.kv.CommitTransactionResponse;

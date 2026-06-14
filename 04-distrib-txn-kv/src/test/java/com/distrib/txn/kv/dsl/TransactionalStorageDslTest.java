@@ -1,4 +1,4 @@
-package com.distrib.txn.kv.dsl2;
+package com.distrib.txn.kv.dsl;
 
 import clock.HybridTimestamp;
 import com.distrib.txn.kv.BeginTransactionResponse;
@@ -9,7 +9,6 @@ import com.distrib.txn.kv.TransactionalStorageReplica;
 import com.distrib.txn.kv.TxnId;
 import com.distrib.txn.kv.TxnWriteResponse;
 import com.tickloom.ProcessId;
-import com.tickloom.history.JepsenHistory;
 import com.tickloom.testkit.Cluster;
 import com.tickloom.testkit.dsl.semanticmodel.Scenario;
 import kv.MVCCKey;
@@ -53,7 +52,7 @@ public class TransactionalStorageDslTest {
                          .expectResponse(CommitTransactionResponse::success);
                 });
 
-        JepsenHistory history = s.run();
+        s.run();
     }
 
     @Test
