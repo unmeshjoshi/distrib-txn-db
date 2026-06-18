@@ -1,0 +1,107 @@
+@startuml LostUpdatePreventionClockPush
+title Lost Update Prevention via HLC Clock Push\n(Snapshot Isolation, no Raft / no replication)
+
+actor "Bob\n(slow client)\nclock starts (1000,0)" as Bob
+actor "Alice\n(fast client)\nclock starts (2000,0)" as Alice
+
+box "Cluster (3 nodes, distinct roles)" #FAFAFA
+  participant "C_b\nbob's coordinator" as Cb
+  participant "C_a\nalice's coordinator" as Ca
+  participant "K\nkey owner\n(sharedKey)" as K
+end box
+
+note over Bob, K
+  Routing constraint: C_b != C_a != K (three distinct nodes).
+  Status-check RPC is the **only** path by which alice's HLC
+  can reach bob's coordinator.
+end note
+
+== 1. Begin transactions ==
+
+Bob -> Cb : BeginTxn(bobTxn, clientTime=(1000,0))
+activate Cb
+note right of Cb : merge -> C_b.hlc = (1000,1)\nstore TxnRecord{PENDING, readTs=(1000,1)}
+Cb --> Bob : success, propagated=(1000,1)
+deactivate Cb
+
+Alice -> Ca : BeginTxn(aliceTxn, clientTime=(2000,0))
+activate Ca
+note right of Ca : merge -> C_a.hlc = (2000,1)\n**alice.snapshot = (2000,1)**
+Ca --> Alice : success, propagated=(2000,1)
+deactivate Ca
+
+== 2. Bob writes intent at K ==
+
+Bob -> K : Write(key, "100", readTs=(1000,1), clientTime=(1000,*))
+activate K
+note right of K : merge -> K.hlc ~ (1000,*)\nput intent @ (1000,*)
+K --> Bob : success
+deactivate K
+note over Cb : C_b.hlc is **still ~ (1000,*)**\nalice's clock has not reached it yet
+
+== 3. Alice's read - the clock-push pivot ==
+
+Alice -> K : Read(key, readTs=(2000,1), clientTime=(2000,*))
+activate K
+note right of K #FFE0B2
+  **PUSH HOP 1:**
+  merge -> K.hlc jumps to (2000,*)
+  finds bob's pending intent
+end note
+K -> Cb : GetTransactionStatus(bobTxn, clientTime=K.hlc.now())
+activate Cb
+note right of Cb #FFCDD2
+  **PUSH HOP 2 - the key event:**
+  merge -> C_b.hlc jumps from
+  (1000,*) to (2000,*)
+end note
+Cb --> K : status=PENDING, propagated=(2000,*)
+deactivate Cb
+note right of K
+  SI policy: ignore pending intent
+  -> read committed @ readTs
+  -> no committed version
+end note
+K --> Alice : not found
+deactivate K
+
+== 4. Bob commits - at a now-pushed-up timestamp ==
+
+Bob -> Cb : Commit(bobTxn, clientTime=(1000,*))
+activate Cb
+note right of Cb #C8E6C9
+  commitTs = hybridClock.now()
+  C_b.hlc was pushed -> (2000,*)
+  -> **commitTs > alice.snapshot** OK
+end note
+Cb -->> K : Resolve(bobTxn, commitTs) [fire-and-forget]
+Cb --> Bob : success, commitTs=(2000,*)
+deactivate Cb
+
+K -> K : move intent -> committedStore @ commitTs
+note right of K : test waits here via\nsteps.await(hasCommittedValue)
+
+== 5. Alice's write rejected - lost update prevented ==
+
+Alice -> K : Write(key, "200", readTs=(2000,1))
+activate K
+note right of K #FFCDD2
+  hasCommittedVersionAfter(key, readTs)?
+  committed @ (2000,*) > readTs (2000,1)
+  -> **STALE**
+end note
+K --> Alice : error "Conflicting committed transaction"
+deactivate K
+
+== Post-run assertions ==
+
+note over Bob, K
+  * **bobSeed (1000,0) < aliceSnapshot**     - BEFORE: bob starts below the snapshot
+  * **bobCommitTs > aliceSnapshot**          - AFTER:  the push lifted him above it
+  * **alice.write -> "Conflicting committed transaction"**
+                                             - OUTCOME: lost update prevented (SI rule 2)
+  The before/after pair makes the push falsifiable; absent it bob commits at ~1000
+  and alice's blind write would silently overwrite him.
+end note
+
+@enduml

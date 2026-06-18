@@ -3,6 +3,7 @@ package com.distrib.txn.kv.dsl;
 import clock.HybridTimestamp;
 import com.distrib.txn.kv.IsolationLevel;
 import com.distrib.txn.kv.TransactionalStorageClient;
+import com.distrib.txn.kv.TransactionalStorageReplica;
 import com.distrib.txn.kv.TxnId;
 import com.distrib.txn.kv.BeginTransactionResponse;
 import com.distrib.txn.kv.TxnWriteResponse;
@@ -83,6 +84,17 @@ public class TxnStepBuilder
             TransactionalStorageClient client = (TransactionalStorageClient) cluster.getClient(clientId);
             client.hybridClock().tick(timestamp);
             cluster.setTimeForProcess(clientId, timestamp.getWallClockTime());
+        });
+        return this;
+    }
+
+    @Override
+    public TxnSetupScope nodeHlc(ProcessId nodeId, HybridTimestamp timestamp) {
+        addGiven(cluster -> {
+            TransactionalStorageReplica replica =
+                    (TransactionalStorageReplica) cluster.getProcess(nodeId);
+            replica.hybridClock().tick(timestamp);
+            cluster.setTimeForProcess(nodeId, timestamp.getWallClockTime());
         });
         return this;
     }
